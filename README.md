@@ -72,4 +72,3 @@ flutter build appbundle --release
 ## Developer
 
 **PolyGon**
-GitHub: [https://github.com/PolyGon-13/Robotics-Tool](https://github.com/PolyGon-13/Robotics-Tool)
