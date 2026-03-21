@@ -17,4 +17,3 @@ The app stores only:
 
 ## Contact
 PolyGon — https://github.com/PolyGon-13
-```
