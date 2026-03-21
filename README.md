@@ -12,7 +12,6 @@ A ROS2 mobile monitoring and visualization app for Android. Connect to a running
 - **Publish** — Publish messages to any topic with a JSON editor and optional repeat mode
 - **Node Graph** — Visualize node-topic connections (force-directed layout)
 - **3D Model Viewer** — Load and inspect STL or URDF robot model files
-- **Dark / Light Mode** — Follows system theme or set manually in Settings
 
 ---
 
@@ -72,4 +71,3 @@ flutter build appbundle --release
 ## Developer
 
 **PolyGon**
-GitHub: [https://github.com/PolyGon-13/Robotics-Tool](https://github.com/PolyGon-13/Robotics-Tool)
