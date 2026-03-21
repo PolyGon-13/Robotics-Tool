@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../services/urdf_parser_service.dart';
 import '../widgets/model_viewer/stl_viewer_widget.dart';
 import '../widgets/model_viewer/urdf_viewer_widget.dart';
+import '../widgets/settings_button.dart';
 
 enum _FileType { stl, urdf }
 
@@ -79,6 +80,7 @@ class _ModelViewerScreenState extends State<ModelViewerScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Model Viewer'),
+        actions: const [SettingsButton()],
       ),
       body: _buildBody(cs),
     );

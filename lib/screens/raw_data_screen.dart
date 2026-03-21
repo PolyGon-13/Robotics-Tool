@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../models/ros_message.dart';
 import '../providers/connection_provider.dart';
 import '../widgets/raw_json_tree_widget.dart';
+import '../widgets/settings_button.dart';
 
 class RawDataScreen extends StatefulWidget {
   final String topic;
@@ -68,6 +69,7 @@ class _RawDataScreenState extends State<RawDataScreen> {
               tooltip: 'Copy JSON',
               onPressed: _copySelected,
             ),
+          const SettingsButton(),
         ],
       ),
       body: body,

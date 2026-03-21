@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/connection_provider.dart';
 import '../widgets/connection_status_badge.dart';
+import '../widgets/settings_button.dart';
 
 class ConnectionScreen extends StatefulWidget {
   const ConnectionScreen({super.key});
@@ -73,6 +74,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
           appBar: AppBar(
             title: const Text('ROS2 Monitor'),
             centerTitle: true,
+            actions: const [SettingsButton()],
           ),
           body: Center(
             child: SingleChildScrollView(

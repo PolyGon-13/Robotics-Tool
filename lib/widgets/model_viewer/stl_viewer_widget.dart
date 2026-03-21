@@ -271,6 +271,9 @@ class _StlPainter extends CustomPainter {
   }
 
   void _drawAxes(Canvas canvas, Size size) {
+    const axisAreaSize = 72.0;
+    const topMargin = 24.0;
+
     const origin = _V3(0, 0, 0);
     const len = 0.6;
     final ox = _project(_rotate(origin), size);
@@ -278,9 +281,14 @@ class _StlPainter extends CustomPainter {
     final yx = _project(_rotate(const _V3(0, len, 0)), size);
     final zx = _project(_rotate(const _V3(0, 0, len)), size);
 
-    // 좌하단으로 오프셋
-    const off = Offset(60, -60);
-    Offset shift(Offset p) => Offset(60 + (p.dx - ox.dx), size.height - 60 + (p.dy - ox.dy));
+    // 우상단 고정 앵커, 델타를 축소해 영역에 맞춤
+    final anchorX = size.width - axisAreaSize / 2;
+    const anchorY = topMargin + axisAreaSize / 2;
+    const axisScale = 0.4;
+    Offset shift(Offset p) => Offset(
+      anchorX + (p.dx - ox.dx) * axisScale,
+      anchorY + (p.dy - ox.dy) * axisScale,
+    );
 
     final axisPaint = Paint()..strokeWidth = 2..style = PaintingStyle.stroke;
 
@@ -295,7 +303,7 @@ class _StlPainter extends CustomPainter {
     void drawLabel(String t, Offset pos, Color c) {
       tp.text = TextSpan(text: t, style: TextStyle(color: c, fontSize: 10, fontWeight: FontWeight.bold));
       tp.layout();
-      tp.paint(canvas, shift(pos) + off * 0.15);
+      tp.paint(canvas, shift(pos) + const Offset(3, -10));
     }
     drawLabel('X', xx, Colors.red);
     drawLabel('Y', yx, Colors.green);

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/topic_provider.dart';
+import '../widgets/settings_button.dart';
 import '../widgets/topic_action_bottom_sheet.dart';
-import 'settings_screen.dart';
 
 class TopicListScreen extends StatelessWidget {
   const TopicListScreen({super.key});
@@ -35,14 +35,7 @@ class TopicListScreen extends StatelessWidget {
               tooltip: 'Refresh',
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'Settings',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
-          ),
+          const SettingsButton(),
         ],
       ),
       body: Column(

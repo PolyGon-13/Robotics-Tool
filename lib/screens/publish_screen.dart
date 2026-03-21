@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/connection_provider.dart';
+import '../widgets/settings_button.dart';
 
 class PublishScreen extends StatefulWidget {
   final String topic;
@@ -164,6 +165,7 @@ class _PublishScreenState extends State<PublishScreen> {
             ),
           ],
         ),
+        actions: const [SettingsButton()],
       ),
       body: Column(
         children: [

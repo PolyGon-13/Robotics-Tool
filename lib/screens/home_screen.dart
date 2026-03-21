@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/settings_button.dart';
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -8,6 +10,9 @@ class HomeScreen extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
+      appBar: AppBar(
+        actions: const [SettingsButton()],
+      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(

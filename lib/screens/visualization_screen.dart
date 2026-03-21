@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/connection_provider.dart';
 import '../widgets/raw_json_tree_widget.dart';
+import '../widgets/settings_button.dart';
 import '../widgets/visualizations/compressed_image_widget.dart';
 import '../widgets/visualizations/image_widget.dart';
 import '../widgets/visualizations/laser_scan_widget.dart';
@@ -81,6 +82,7 @@ class _VisualizationScreenState extends State<VisualizationScreen> {
             icon: Icon(_paused ? Icons.play_arrow : Icons.pause),
             onPressed: () => setState(() => _paused = !_paused),
           ),
+          const SettingsButton(),
         ],
       ),
       body: _buildVisualization(),

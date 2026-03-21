@@ -12,11 +12,7 @@ import 'screens/model_viewer_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    systemNavigationBarColor: Colors.transparent,
-    systemNavigationBarDividerColor: Colors.transparent,
-  ));
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   final themeProvider = await ThemeProvider().load();
   runApp(RosMobileApp(themeProvider: themeProvider));
 }

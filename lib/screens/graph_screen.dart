@@ -6,8 +6,8 @@ import '../models/ros_node.dart';
 import '../models/ros_topic.dart';
 import '../providers/connection_provider.dart';
 import '../providers/topic_provider.dart';
+import '../widgets/settings_button.dart';
 import '../widgets/topic_action_bottom_sheet.dart';
-import 'settings_screen.dart';
 
 class GraphScreen extends StatefulWidget {
   const GraphScreen({super.key});
@@ -203,14 +203,7 @@ class _GraphScreenState extends State<GraphScreen> {
                 : const Icon(Icons.refresh),
             tooltip: 'Refresh',
           ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'Settings',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
-          ),
+          const SettingsButton(),
         ],
       ),
       body: _buildBody(highlighted),
