@@ -41,7 +41,7 @@ Select a topic to echo its live messages. To publish, open the **Publish** panel
 
 **Demo — publishing a topic in real time:**
 
-<video src="assets/video/sample_video.mp4" controls width="500"></video>
+[![Demo Video](https://img.shields.io/badge/Demo_Video-View-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/dDQ4CdB41EE)
 ---
 
 ### 4. Node Graph
