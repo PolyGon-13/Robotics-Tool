@@ -41,8 +41,7 @@ Select a topic to echo its live messages. To publish, open the **Publish** panel
 
 **Demo — publishing a topic in real time:**
 
-https://github.com/PolyGon-13/Robotics-Tool/raw/main/sample_video.mp4
-
+<video src="assets/video/sample_video.mp4" controls width="500"></video>
 ---
 
 ### 4. Node Graph
