@@ -15,11 +15,49 @@ A ROS2 mobile monitoring and visualization app for Android. Connect to a running
 
 ---
 
-## Requirements
+## Usage
 
-- Android 5.0 (API 21) or higher
-- ROS2 environment with `rosbridge_server` running
-- Same Wi-Fi network as the Android device
+### 1. Connect to ROS2
+
+Launch the app and enter your PC's IP address and port (default **9090**), then tap **Connect**.
+
+<img src="assets/screenshots/app-image/main_page.jpg" width="270"/> <img src="assets/screenshots/app-image/connect_page.jpg" width="270"/>
+
+---
+
+### 2. Browse Topics
+
+Once connected, open **Topic Monitor** to see all active topics. Use the search bar or filter by message type.
+
+<img src="assets/screenshots/app-image/topic_list.jpg" width="270"/> <img src="assets/screenshots/app-image/topic_select.jpg" width="270"/>
+
+---
+
+### 3. Echo & Publish
+
+Select a topic to echo its live messages. To publish, open the **Publish** panel, write your JSON payload, and send — or enable repeat mode for continuous publishing.
+
+<img src="assets/screenshots/app-image/topic_echo.jpg" width="270"/>
+
+**Demo — publishing a topic in real time:**
+
+https://github.com/PolyGon-13/Robotics-Tool/raw/main/sample_video.mp4
+
+---
+
+### 4. Node Graph
+
+Visualize how nodes and topics are connected in a force-directed graph layout.
+
+<img src="assets/screenshots/app-image/node_graph.jpg" width="270"/>
+
+---
+
+### 5. 3D Model Viewer
+
+Load STL or URDF files to inspect your robot's physical model.
+
+<img src="assets/screenshots/app-image/stl_viewer.jpg" width="270"/>
 
 ---
 
@@ -36,14 +74,6 @@ ros2 launch rosbridge_server rosbridge_websocket_launch.xml
 ```
 
 Default port: **9090**
-
----
-
-## Usage
-
-1. Launch the app and tap **Topic Monitor**
-2. Enter your PC's IP address and port (default 9090)
-3. Tap **Connect**
 
 ---
 
