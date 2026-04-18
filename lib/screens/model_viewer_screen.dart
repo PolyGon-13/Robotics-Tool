@@ -125,14 +125,6 @@ class _ModelViewerScreenState extends State<ModelViewerScreen> {
                   .titleMedium
                   ?.copyWith(color: cs.onSurfaceVariant),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Tap the folder icon to select a file',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: cs.onSurfaceVariant),
-            ),
             const SizedBox(height: 32),
             FilledButton.icon(
               onPressed: _pickFile,

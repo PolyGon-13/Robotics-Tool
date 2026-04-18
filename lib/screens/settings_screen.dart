@@ -23,7 +23,6 @@ class SettingsScreen extends StatelessWidget {
                 children: [
                   RadioListTile<ThemeMode>(
                     title: const Text('System Default'),
-                    subtitle: const Text('Follow device settings'),
                     secondary: const Icon(Icons.brightness_auto),
                     value: ThemeMode.system,
                   ),
@@ -51,15 +50,13 @@ class SettingsScreen extends StatelessWidget {
               children: [
                 ListTile(
                   leading: const Icon(Icons.computer),
-                  title: const Text('Last IP'),
-                  subtitle: Text(
-                    conn.ip.isEmpty ? 'Not connected yet' : conn.ip,
-                  ),
+                  title: const Text('IP'),
+                  subtitle: Text(conn.connectedIp ?? '-'),
                 ),
                 ListTile(
                   leading: const Icon(Icons.settings_ethernet),
                   title: const Text('Port'),
-                  subtitle: Text(conn.port.toString()),
+                  subtitle: Text(conn.connectedPort?.toString() ?? '-'),
                 ),
                 ListTile(
                   leading: Icon(
@@ -119,7 +116,7 @@ class SettingsScreen extends StatelessWidget {
           const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('Version'),
-            subtitle: Text('1.0.0'),
+            subtitle: Text('1.0.1'),
           ),
           const ListTile(
             leading: Icon(Icons.person_outline),

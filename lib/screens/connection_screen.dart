@@ -55,6 +55,10 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     await context.read<ConnectionProvider>().connect(ip, port);
   }
 
+  Future<void> _cancelConnect() async {
+    await context.read<ConnectionProvider>().cancelConnect();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ConnectionProvider>(
@@ -70,7 +74,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
         }
         if (!conn.isConnected) _hasNavigated = false;
 
-        return Scaffold(
+        return PopScope(
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop && conn.status == ConnectionStatus.connecting) {
+              context.read<ConnectionProvider>().cancelConnect();
+            }
+          },
+          child: Scaffold(
           appBar: AppBar(
             title: const Text('ROS2 Monitor'),
             centerTitle: true,
@@ -118,7 +128,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                     TextField(
                       readOnly: true,
                       decoration: const InputDecoration(
-                        labelText: 'ROS_DOMAIN_ID (server side)',
+                        labelText: 'ROS_DOMAIN_ID',
                         hintText: '0',
                         prefixIcon: Icon(Icons.info_outline),
                         border: OutlineInputBorder(),
@@ -137,7 +147,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                     const SizedBox(height: 24),
                     FilledButton.icon(
                       onPressed: conn.status == ConnectionStatus.connecting
-                          ? null
+                          ? _cancelConnect
                           : _connect,
                       icon: conn.status == ConnectionStatus.connecting
                           ? const SizedBox(
@@ -158,6 +168,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               ),
             ),
           ),
+        ),
         );
       },
     );

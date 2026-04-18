@@ -27,6 +27,9 @@ class RosbridgeService {
   static const int _maxReconnectAttempts = 3;
   static const Duration _reconnectDelay = Duration(seconds: 2);
 
+  int _connectGeneration = 0;
+  Timer? _reconnectTimer;
+
   final _random = Random();
 
   String _generateId() =>
@@ -42,6 +45,7 @@ class RosbridgeService {
   }
 
   Future<void> _doConnect() async {
+    final myGen = ++_connectGeneration;
     _setStatus(ConnectionStatus.connecting);
 
     try {
@@ -51,16 +55,19 @@ class RosbridgeService {
       // Wait for handshake (throws if connection refused)
       await _channel!.ready;
 
+      if (myGen != _connectGeneration) return;
+
       _setStatus(ConnectionStatus.connected);
       _reconnectAttempts = 0;
 
       _subscription = _channel!.stream.listen(
         _handleMessage,
-        onError: _handleError,
-        onDone: _handleDone,
+        onError: (e) { if (myGen == _connectGeneration) _handleError(e); },
+        onDone: ()    { if (myGen == _connectGeneration) _handleDone(); },
         cancelOnError: false,
       );
     } catch (e) {
+      if (myGen != _connectGeneration) return;
       _handleError(e);
     }
   }
@@ -108,10 +115,13 @@ class RosbridgeService {
     }
     _reconnectAttempts++;
     _setStatus(ConnectionStatus.connecting);
-    Future.delayed(_reconnectDelay, _doConnect);
+    _reconnectTimer = Timer(_reconnectDelay, _doConnect);
   }
 
   Future<void> disconnect() async {
+    _connectGeneration++;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _currentIp = null;
     _setStatus(ConnectionStatus.disconnected);
     _cleanUp();

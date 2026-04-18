@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -12,11 +14,17 @@ class ConnectionProvider extends ChangeNotifier {
   String _ip = '';
   int _port = 9090;
   String? _errorMessage;
+  String? _connectedIp;
+  int? _connectedPort;
 
   ConnectionStatus get status => _status;
   String get ip => _ip;
   int get port => _port;
   String? get errorMessage => _errorMessage;
+  /// 현재 실제로 연결된 IP. 미연결 시 null.
+  String? get connectedIp => _connectedIp;
+  /// 현재 실제로 연결된 포트. 미연결 시 null.
+  int? get connectedPort => _connectedPort;
   RosbridgeService get service => _service;
 
   bool get isConnected => _status == ConnectionStatus.connected;
@@ -24,10 +32,17 @@ class ConnectionProvider extends ChangeNotifier {
   ConnectionProvider() {
     _service.onStatusChange = (s) {
       _status = s;
-      if (s == ConnectionStatus.failed) {
-        _errorMessage = 'Connection failed after $_maxRetries attempts';
-      } else if (s == ConnectionStatus.connected) {
+      if (s == ConnectionStatus.connected) {
+        _connectedIp = _ip;
+        _connectedPort = _port;
         _errorMessage = null;
+      } else if (s == ConnectionStatus.failed) {
+        _connectedIp = null;
+        _connectedPort = null;
+        _errorMessage = 'Connection failed after $_maxRetries attempts';
+      } else if (s == ConnectionStatus.disconnected) {
+        _connectedIp = null;
+        _connectedPort = null;
       }
       notifyListeners();
     };
@@ -35,6 +50,8 @@ class ConnectionProvider extends ChangeNotifier {
   }
 
   static const int _maxRetries = 3;
+  static const Duration _connectTimeout = Duration(seconds: 10);
+  Timer? _timeoutTimer;
 
   Future<void> _loadLastIp() async {
     final prefs = await SharedPreferences.getInstance();
@@ -54,10 +71,34 @@ class ConnectionProvider extends ChangeNotifier {
     _port = port;
     _errorMessage = null;
     await _saveLastIp();
+
+    _timeoutTimer?.cancel();
+    _timeoutTimer = Timer(_connectTimeout, () {
+      if (_status == ConnectionStatus.connecting) {
+        _errorMessage = 'Connection timed out';
+        _timeoutTimer = null;
+        _status = ConnectionStatus.disconnected;
+        notifyListeners();
+        _service.disconnect();
+      }
+    });
+
     await _service.connect(ip, port);
   }
 
+  /// 연결 시도를 사용자가 명시적으로 취소할 때 호출.
+  Future<void> cancelConnect() async {
+    _timeoutTimer?.cancel();
+    _timeoutTimer = null;
+    _errorMessage = null;
+    _status = ConnectionStatus.disconnected;
+    notifyListeners();
+    await _service.disconnect();
+  }
+
   Future<void> disconnect() async {
+    _timeoutTimer?.cancel();
+    _timeoutTimer = null;
     _status = ConnectionStatus.disconnected;
     _errorMessage = null;
     notifyListeners();
@@ -66,6 +107,7 @@ class ConnectionProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _timeoutTimer?.cancel();
     _service.disconnect();
     super.dispose();
   }

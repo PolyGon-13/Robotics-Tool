@@ -33,21 +33,13 @@ class HomeScreen extends StatelessWidget {
                           color: cs.onSurface,
                         ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Select a mode to get started',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: cs.onSurfaceVariant),
-                  ),
                   const SizedBox(height: 48),
 
                   // ── Topic Monitor 카드 ─────────────────────────────────
                   _ModeCard(
                     icon: Icons.monitor_heart_outlined,
                     title: 'Topic Monitor',
-                    subtitle: 'ROS2 토픽 모니터링, 시각화, publish',
+                    subtitle: '',
                     color: cs.primaryContainer,
                     onColor: cs.onPrimaryContainer,
                     onTap: () =>
@@ -59,7 +51,6 @@ class HomeScreen extends StatelessWidget {
                   _ModeCard(
                     icon: Icons.view_in_ar_rounded,
                     title: 'Model Viewer',
-                    subtitle: 'STL / URDF 3D 모델 뷰어',
                     color: cs.tertiaryContainer,
                     onColor: cs.onTertiaryContainer,
                     onTap: () => Navigator.pushNamed(context, '/model'),
@@ -77,7 +68,7 @@ class HomeScreen extends StatelessWidget {
 class _ModeCard extends StatelessWidget {
   final IconData icon;
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final Color color;
   final Color onColor;
   final VoidCallback onTap;
@@ -85,7 +76,7 @@ class _ModeCard extends StatelessWidget {
   const _ModeCard({
     required this.icon,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.color,
     required this.onColor,
     required this.onTap,
@@ -116,12 +107,14 @@ class _ModeCard extends StatelessWidget {
                             .titleLarge
                             ?.copyWith(
                                 color: onColor, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text(subtitle,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: onColor.withValues(alpha: 0.8))),
+                    if (subtitle != null && subtitle!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(subtitle!,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: onColor.withValues(alpha: 0.8))),
+                    ],
                   ],
                 ),
               ),
