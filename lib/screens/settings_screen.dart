@@ -111,17 +111,22 @@ class SettingsScreen extends StatelessWidget {
           const ListTile(
             leading: Icon(Icons.apps),
             title: Text('App Name'),
-            subtitle: Text('Robotics-Tool'),
+            subtitle: Text('Robotics Tool'),
           ),
           const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('Version'),
-            subtitle: Text('1.0.1'),
+            subtitle: Text('1.0.3'),
           ),
           const ListTile(
             leading: Icon(Icons.person_outline),
             title: Text('Developer'),
             subtitle: Text('PolyGon'),
+          ),
+          const ListTile(
+            leading: Icon(Icons.bug_report_outlined),
+            title: Text('Bug Report'),
+            subtitle: Text('polygon1113@gmail.com'),
           ),
 
           const SizedBox(height: 32),
