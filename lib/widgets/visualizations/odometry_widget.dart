@@ -42,8 +42,6 @@ class _OdometryWidgetState extends State<OdometryWidget> {
     final qy = (ori['y'] as num?)?.toDouble() ?? 0;
     final qz = (ori['z'] as num?)?.toDouble() ?? 0;
     final qw = (ori['w'] as num?)?.toDouble() ?? 1;
-    // theta computed for potential future use; suppress unused warning
-    atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy * qy + qz * qz));
 
     final twist = (msg['twist'] as Map?)?.cast<String, dynamic>() ?? {};
     final twistInner = (twist['twist'] as Map?)?.cast<String, dynamic>() ?? {};
