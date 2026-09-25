@@ -13,8 +13,8 @@ ships for Android only; the web build here is a throwaway test harness.
 ## Run
 
 ```bash
-# 1. Fake robot: 16 topics (LaserScan, Odometry, Imu, JointState, images, ...)
-python3 tool/e2e/mock_rosbridge.py 9090 &
+# 1. Fake robot: 17 topics (LaserScan, Odometry, Imu, JointState, images, TF, ...)
+python3 tool/e2e/mock_rosbridge.py 9090 > mock.log &
 
 # 2. Web build of the app (copied to /tmp/robotics_tool_web, repo untouched)
 tool/e2e/build_web.sh            # add --debug to keep Flutter assertions on
@@ -24,12 +24,15 @@ python3 -m http.server 8080 --directory /tmp/robotics_tool_web/build/web &
 NODE_PATH=$(npm root -g) node tool/e2e/audit.js e2e-shots
 NODE_PATH=$(npm root -g) node tool/e2e/audit.js e2e-shots dark
 
-# 4. Reconnect / stale-data scenarios
-NODE_PATH=$(npm root -g) node tool/e2e/scenarios.js
+# 4. Pass/fail scenarios: reconnects, stale data, joystick commands
+#    (MOCK_LOG lets the joystick check read what the server received)
+MOCK_LOG=mock.log NODE_PATH=$(npm root -g) node tool/e2e/scenarios.js
 ```
 
 `audit.js` prints the labels found on each screen and any Flutter exception
-the page logged; a clean run ends with `errors: none`.
+the page logged; a clean run ends with `errors: none`. It also loads the
+sample models in `tool/e2e/models/` into the Model Viewer. Build with
+`--debug` to have Flutter assertions (layout overflows etc.) reported too.
 
 Mock server controls:
 
