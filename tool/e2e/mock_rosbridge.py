@@ -26,7 +26,7 @@ import websockets
 RATE_HZ = {
     "/scan": 10, "/odom": 20, "/cmd_vel": 10, "/battery_state": 1,
     "/imu/data": 50, "/joint_states": 20, "/camera/image_raw": 5,
-    "/camera/image_raw/compressed": 5, "/ultrasonic/front": 10,
+    "/camera/image_raw/compressed": 5, "/camera/depth/image_raw": 5, "/ultrasonic/front": 10,
     "/goal_pose": 1, "/robot_status": 1, "/emergency_stop": 2,
     "/battery_voltage": 2, "/rosout": 2, "/parameter_events": 0,
     "/tf": 30,
@@ -41,6 +41,7 @@ TOPICS = {
     "/joint_states": "sensor_msgs/msg/JointState",
     "/camera/image_raw": "sensor_msgs/msg/Image",
     "/camera/image_raw/compressed": "sensor_msgs/msg/CompressedImage",
+    "/camera/depth/image_raw": "sensor_msgs/msg/Image",
     "/ultrasonic/front": "sensor_msgs/msg/Range",
     "/goal_pose": "geometry_msgs/msg/PoseStamped",
     "/robot_status": "std_msgs/msg/String",
@@ -56,6 +57,7 @@ PUBS = {
     "/imu/data": ["/imu_driver"], "/joint_states": ["/joint_state_broadcaster"],
     "/camera/image_raw": ["/camera_driver"],
     "/camera/image_raw/compressed": ["/camera_driver"],
+    "/camera/depth/image_raw": ["/camera_driver"],
     "/ultrasonic/front": ["/ultrasonic_driver"], "/goal_pose": ["/rviz2"],
     "/robot_status": ["/robot_manager"], "/emergency_stop": ["/robot_manager"],
     "/tf": ["/robot_state_publisher", "/diff_drive_controller"],
@@ -66,7 +68,7 @@ SUBS = {
     "/cmd_vel": ["/diff_drive_controller"], "/battery_state": ["/robot_manager"],
     "/battery_voltage": [], "/imu/data": ["/ekf_filter"],
     "/joint_states": ["/robot_state_publisher"], "/camera/image_raw": [],
-    "/camera/image_raw/compressed": [], "/ultrasonic/front": ["/robot_manager"],
+    "/camera/image_raw/compressed": [], "/camera/depth/image_raw": [], "/ultrasonic/front": ["/robot_manager"],
     "/goal_pose": ["/nav2_controller"], "/robot_status": [], "/emergency_stop": ["/diff_drive_controller"],
     "/tf": ["/slam_toolbox", "/nav2_controller"], "/rosout": [], "/parameter_events": [],
 }
@@ -203,6 +205,18 @@ def fake_msg(topic, k):
         w, h = 160, 120
         return {"header": header("camera"), "format": "png",
                 "data": base64.b64encode(png_bytes(w, h, test_pattern(w, h, t))).decode()}
+    if topic == "/camera/depth/image_raw":
+        # 16UC1 depth in mm: a tilted floor with a box in front, 0 = no reading
+        w, h = 80, 60
+        buf = bytearray()
+        for y in range(h):
+            for x in range(w):
+                d = 0 if y < 4 else int(4000 - 45 * y + 200 * math.sin(t))
+                if abs(x - 40 - 15 * math.sin(t)) < 10 and 20 < y < 45:
+                    d = 900
+                buf += struct.pack("<H", max(0, d))
+        return {"header": header("camera_depth"), "height": h, "width": w, "encoding": "16UC1",
+                "is_bigendian": 0, "step": w * 2, "data": base64.b64encode(bytes(buf)).decode()}
     if topic == "/ultrasonic/front":
         return {"header": header("us_front"), "radiation_type": 0, "field_of_view": 0.5,
                 "min_range": 0.02, "max_range": 4.0, "range": round(1.2 + 0.8 * math.sin(t * 0.8), 3)}
@@ -214,9 +228,16 @@ def fake_msg(topic, k):
     if topic == "/emergency_stop":
         return {"data": int(t / 10) % 4 == 3}
     if topic == "/tf":
-        return {"transforms": [{"header": header("odom"), "child_frame_id": "base_link",
-                                "transform": {"translation": {"x": 0.0, "y": 0.0, "z": 0.0},
-                                              "rotation": quat_z(t * 0.3)}}]}
+        def tf(parent, child, x, y, z, yaw):
+            return {"header": header(parent), "child_frame_id": child,
+                    "transform": {"translation": {"x": x, "y": y, "z": z}, "rotation": quat_z(yaw)}}
+        return {"transforms": [
+            tf("map", "odom", 0.12, -0.05, 0.0, 0.02),
+            tf("odom", "base_link", 1.5 * math.sin(t * 0.3), 1.0 * math.sin(t * 0.6), 0.0, t * 0.3),
+            tf("base_link", "laser", 0.1, 0.0, 0.25, 0.0),
+            tf("base_link", "imu_link", 0.0, 0.0, 0.05, 0.0),
+            tf("base_link", "camera", 0.15, 0.0, 0.3, 0.0),
+        ]}
     if topic == "/rosout":
         return {"stamp": stamp(), "level": 20, "name": "robot_manager",
                 "msg": f"heartbeat {k}", "file": "manager.cpp", "function": "tick", "line": 42}

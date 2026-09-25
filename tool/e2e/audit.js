@@ -10,7 +10,7 @@ fs.mkdirSync(out, { recursive: true });
 
 const TOPICS = [
   '/scan', '/odom', '/cmd_vel', '/imu/data', '/joint_states', '/battery_state',
-  '/battery_voltage', '/camera/image_raw', '/camera/image_raw/compressed',
+  '/battery_voltage', '/camera/image_raw', '/camera/image_raw/compressed', '/camera/depth/image_raw',
   '/ultrasonic/front', '/goal_pose', '/robot_status', '/emergency_stop', '/tf',
 ];
 
@@ -33,7 +33,13 @@ const TOPICS = [
       await wait(page, 700);
       await page.getByText(/Topic Echo|Echo|Visualize/).first().click();
       await wait(page, 3500);
-      await shot(`1${String(i).padStart(2, '0')}_echo${topic.replace(/\//g, '_')}`);
+      const name = `1${String(i).padStart(2, '0')}_echo${topic.replace(/\//g, '_')}`;
+      await shot(name);
+      // Second shot further down for long visualizations
+      await page.mouse.move(206, 500);
+      await page.mouse.wheel(0, 650);
+      await wait(page, 600);
+      await page.screenshot({ path: `${out}/${name}_scrolled${suffix}.png` });
       await back(page);
     } catch (e) {
       console.log(`!! ${topic}: ${e.message.split('\n')[0]}`);

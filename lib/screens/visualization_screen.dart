@@ -110,13 +110,21 @@ class _VisualizationScreenState extends State<VisualizationScreen> {
         waited: DateTime.now().difference(_openedAt),
       );
     }
-    if (_showRaw) {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(12),
-        child: RawJsonTreeWidget(data: msg),
-      );
-    }
-    return buildVisualizer(widget.type, widget.topic, msg);
+    final raw = SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: RawJsonTreeWidget(data: msg),
+    );
+    if (!hasVisualizer(widget.type)) return raw;
+    // Keep the visualizer mounted while raw JSON is shown so its history
+    // (charts, trajectory) keeps recording.
+    return IndexedStack(
+      index: _showRaw ? 1 : 0,
+      sizing: StackFit.expand,
+      children: [
+        buildVisualizer(widget.type, widget.topic, msg),
+        _showRaw ? raw : const SizedBox.shrink(),
+      ],
+    );
   }
 }
 

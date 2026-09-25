@@ -183,7 +183,11 @@ class _PrimitiveNode extends StatelessWidget {
       valueColor = cs.onSurface;     // null 등 기타
     }
 
-    final displayValue = value == null ? 'null' : value.toString();
+    // Image data etc. arrive as huge base64 strings; keep the tree readable
+    var displayValue = value == null ? 'null' : value.toString();
+    if (displayValue.length > 200) {
+      displayValue = '${displayValue.substring(0, 200)}… (${displayValue.length} chars)';
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
