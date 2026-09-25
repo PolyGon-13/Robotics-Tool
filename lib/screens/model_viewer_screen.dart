@@ -1,15 +1,24 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../services/mesh_parsers.dart';
 import '../services/urdf_parser_service.dart';
-import '../widgets/model_viewer/stl_viewer_widget.dart';
+import '../widgets/model_viewer/mesh_viewer_widget.dart';
 import '../widgets/model_viewer/urdf_viewer_widget.dart';
 import '../widgets/settings_button.dart';
 
-enum _FileType { stl, urdf }
+const _meshExtensions = {'stl', 'dae'};
+
+/// Parses one mesh file off the UI thread (STL can be 100k+ triangles).
+List<TriMesh> _parseMeshFile((String, Uint8List) file) {
+  final (ext, bytes) = file;
+  return ext == 'dae'
+      ? parseDae(utf8.decode(bytes, allowMalformed: true))
+      : [parseStl(bytes)];
+}
 
 class ModelViewerScreen extends StatefulWidget {
   const ModelViewerScreen({super.key});
@@ -19,76 +28,158 @@ class ModelViewerScreen extends StatefulWidget {
 }
 
 class _ModelViewerScreenState extends State<ModelViewerScreen> {
-  Uint8List? _fileBytes;
-  String _fileName = '';
-  _FileType? _fileType;
+  String _title = '';
   String? _error;
+  bool _loading = false;
 
-  // URDF 전용
-  UrdfRobot? _urdfRobot;
+  UrdfRobot? _robot;
+  Map<String, List<TriMesh>> _urdfMeshes = const {};
+  List<TriMesh>? _meshes; // standalone STL/DAE
+  int _meshBytes = 0;
 
-  Future<void> _pickFile() async {
+  String _ext(PlatformFile f) => (f.extension ?? f.name.split('.').last).toLowerCase();
+
+  Future<List<PlatformFile>?> _pick() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
+      allowMultiple: true,
+      withData: true,
+    );
+    return result?.files;
+  }
+
+  /// Parses the picked mesh files; returns file name → meshes and skipped names.
+  Future<(Map<String, List<TriMesh>>, List<String>)> _loadMeshes(List<PlatformFile> files) async {
+    final out = <String, List<TriMesh>>{};
+    final failed = <String>[];
+    for (final f in files) {
+      final ext = _ext(f);
+      if (!_meshExtensions.contains(ext) || f.bytes == null) continue;
+      try {
+        out[meshBaseName(f.name)] = await compute(_parseMeshFile, (ext, f.bytes!));
+      } catch (e) {
+        failed.add(f.name);
+      }
+    }
+    return (out, failed);
+  }
+
+  Future<void> _open() async {
+    List<PlatformFile>? files;
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty) return;
-
-      final file = result.files.single;
-      final ext = (file.extension ?? '').toLowerCase();
-      final bytes = file.bytes;
-
-      if (bytes == null) {
-        setState(() => _error = 'Could not read file data');
-        return;
-      }
-
-      if (ext == 'stl') {
-        setState(() {
-          _fileBytes = bytes;
-          _fileName = file.name;
-          _fileType = _FileType.stl;
-          _urdfRobot = null;
-          _error = null;
-        });
-      } else if (ext == 'urdf') {
-        try {
-          final text = utf8.decode(bytes, allowMalformed: true);
-          final robot = UrdfParserService.parse(text);
-          setState(() {
-            _fileBytes = bytes;
-            _fileName = file.name;
-            _fileType = _FileType.urdf;
-            _urdfRobot = robot;
-            _error = null;
-          });
-        } catch (e) {
-          setState(() => _error = 'URDF parse error: $e');
-        }
-      } else {
-        setState(() => _error = 'Unsupported file type: .$ext\n(STL / URDF only)');
-      }
+      files = await _pick();
     } catch (e) {
       setState(() => _error = 'File picker error: $e');
+      return;
+    }
+    if (files == null || files.isEmpty) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final urdf = files.where((f) => _ext(f) == 'urdf' || _ext(f) == 'xacro').firstOrNull;
+      final (meshes, failed) = await _loadMeshes(files);
+      if (!mounted) return;
+
+      if (urdf != null) {
+        final robot = UrdfParserService.parse(utf8.decode(urdf.bytes ?? Uint8List(0), allowMalformed: true));
+        setState(() {
+          _robot = robot;
+          _urdfMeshes = meshes;
+          _meshes = null;
+          _title = urdf.name;
+        });
+      } else if (meshes.isNotEmpty) {
+        setState(() {
+          _robot = null;
+          _meshes = [for (final m in meshes.values) ...m];
+          _meshBytes = files!.fold(0, (s, f) => s + (f.bytes?.length ?? 0));
+          _title = meshes.length == 1 ? files.first.name : '${meshes.length} meshes';
+        });
+      } else {
+        final names = files.map((f) => f.name).join(', ');
+        setState(() => _error = 'Nothing to show in: $names\n\n'
+            'Supported: .urdf (with its .stl / .dae meshes), .stl, .dae');
+      }
+      if (failed.isNotEmpty && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not read: ${failed.join(', ')}')),
+        );
+      }
+    } on FormatException catch (e) {
+      setState(() => _error = 'Could not read the URDF: ${e.message}');
+    } catch (e) {
+      setState(() => _error = 'Could not open the file: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// Add mesh files to the loaded URDF.
+  Future<void> _addMeshes() async {
+    final files = await _pick();
+    if (files == null || files.isEmpty) return;
+    setState(() => _loading = true);
+    final (meshes, failed) = await _loadMeshes(files);
+    if (!mounted) return;
+    final wanted = _robot?.meshKeys ?? const <String>{};
+    final unused = meshes.keys.where((k) => !wanted.contains(k)).toList();
+    setState(() {
+      _urdfMeshes = {..._urdfMeshes, ...meshes};
+      _loading = false;
+    });
+    final notes = [
+      if (failed.isNotEmpty) 'Could not read: ${failed.join(', ')}',
+      if (unused.isNotEmpty) 'Not used by this URDF: ${unused.join(', ')}',
+    ];
+    if (notes.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(notes.join('\n'))));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
+    final hasModel = _robot != null || _meshes != null;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Model Viewer'),
-        actions: const [SettingsButton()],
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Model Viewer'),
+            if (hasModel)
+              Text(_title,
+                  style: Theme.of(context).textTheme.bodySmall, overflow: TextOverflow.ellipsis),
+          ],
+        ),
+        actions: [
+          if (hasModel)
+            IconButton(
+              icon: const Icon(Icons.folder_open),
+              tooltip: 'Open another model',
+              onPressed: _loading ? null : _open,
+            ),
+          const SettingsButton(),
+        ],
       ),
-      body: _buildBody(cs),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _body()),
+          if (_loading)
+            const Positioned.fill(
+              child: ColoredBox(
+                color: Color(0x66000000),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
-  Widget _buildBody(ColorScheme cs) {
-    // 에러 표시
+  Widget _body() {
+    final cs = Theme.of(context).colorScheme;
     if (_error != null) {
       return Center(
         child: Padding(
@@ -101,7 +192,7 @@ class _ModelViewerScreenState extends State<ModelViewerScreen> {
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 20),
               FilledButton.icon(
-                onPressed: _pickFile,
+                onPressed: _open,
                 icon: const Icon(Icons.folder_open),
                 label: const Text('Try Again'),
               ),
@@ -110,80 +201,43 @@ class _ModelViewerScreenState extends State<ModelViewerScreen> {
         ),
       );
     }
-
-    // 파일 없음 → 안내 화면
-    if (_fileBytes == null) {
-      return Center(
+    if (_robot != null) {
+      return UrdfViewerWidget(
+        key: ValueKey(_robot),
+        robot: _robot!,
+        meshes: _urdfMeshes,
+        onAddMeshes: _addMeshes,
+      );
+    }
+    if (_meshes != null) {
+      return MeshViewerWidget(key: ValueKey(_meshes), meshes: _meshes!, fileBytes: _meshBytes);
+    }
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.view_in_ar_rounded, size: 80, color: cs.onSurfaceVariant),
             const SizedBox(height: 20),
+            Text('Load STL, DAE or URDF files',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(color: cs.onSurfaceVariant)),
+            const SizedBox(height: 8),
             Text(
-              'Load STL or URDF file',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(color: cs.onSurfaceVariant),
+              'For a URDF that uses meshes, select the .urdf file together with '
+              'its .stl / .dae files (they are matched by file name).',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 28),
             FilledButton.icon(
-              onPressed: _pickFile,
+              onPressed: _open,
               icon: const Icon(Icons.folder_open),
               label: const Text('Load File'),
             ),
           ],
         ),
-      );
-    }
-
-    // 뷰어 화면
-    return Column(
-      children: [
-        // 상단 파일 정보 바
-        Container(
-          color: cs.surfaceContainerHighest,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          child: Row(
-            children: [
-              const Icon(Icons.insert_drive_file, size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _fileName,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Chip(
-                label: Text(
-                  _fileType == _FileType.stl ? 'STL' : 'URDF',
-                  style: const TextStyle(fontSize: 11),
-                ),
-                padding: EdgeInsets.zero,
-                backgroundColor: _fileType == _FileType.stl
-                    ? cs.primaryContainer
-                    : cs.tertiaryContainer,
-              ),
-            ],
-          ),
-        ),
-
-        // 3D 뷰어
-        Expanded(
-          child: _fileType == _FileType.stl
-              ? StlViewerWidget(
-                  key: ValueKey(_fileName),
-                  fileBytes: _fileBytes!,
-                  fileSize: _fileBytes!.length,
-                )
-              : UrdfViewerWidget(
-                  key: ValueKey(_fileName),
-                  robot: _urdfRobot!,
-                ),
-        ),
-      ],
+      ),
     );
   }
 }

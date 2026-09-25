@@ -1,3 +1,5 @@
+import 'dart:ui' show Color;
+
 import 'package:xml/xml.dart';
 
 class UrdfGeometry {
@@ -6,6 +8,7 @@ class UrdfGeometry {
   final double radius;     // cylinder/sphere
   final double length;     // cylinder
   final String meshFile;
+  final List<double> meshScale;
 
   const UrdfGeometry({
     required this.type,
@@ -13,7 +16,17 @@ class UrdfGeometry {
     this.radius = 0,
     this.length = 0,
     this.meshFile = '',
+    this.meshScale = const [1, 1, 1],
   });
+
+  /// File name without the package:// or directory part, lower-case, used to
+  /// match a mesh reference with a file the user picked.
+  String get meshKey => meshBaseName(meshFile);
+}
+
+String meshBaseName(String path) {
+  final p = path.replaceAll('\\', '/');
+  return p.substring(p.lastIndexOf('/') + 1).toLowerCase();
 }
 
 class UrdfOrigin {
@@ -34,27 +47,19 @@ class UrdfOrigin {
       roll: rpy[0], pitch: rpy[1], yaw: rpy[2],
     );
   }
-
-  static List<double> _parseVec3(String? s) {
-    if (s == null) return [0, 0, 0];
-    final parts = s.trim().split(RegExp(r'\s+'));
-    return [
-      double.tryParse(parts.elementAtOrNull(0) ?? '') ?? 0,
-      double.tryParse(parts.elementAtOrNull(1) ?? '') ?? 0,
-      double.tryParse(parts.elementAtOrNull(2) ?? '') ?? 0,
-    ];
-  }
 }
 
 class UrdfVisual {
   final UrdfOrigin origin;
   final UrdfGeometry geometry;
-  final String materialColor; // hex or empty
+
+  /// Material color (inline or a named top-level material); null if none.
+  final Color? color;
 
   const UrdfVisual({
     required this.origin,
     required this.geometry,
-    this.materialColor = '',
+    this.color,
   });
 }
 
@@ -67,7 +72,7 @@ class UrdfLink {
 
 class UrdfJoint {
   final String name;
-  final String type; // fixed | revolute | prismatic | continuous | floating
+  final String type; // fixed | revolute | prismatic | continuous | floating | planar
   final String parent;
   final String child;
   final UrdfOrigin origin;
@@ -81,10 +86,12 @@ class UrdfJoint {
     required this.parent,
     required this.child,
     required this.origin,
-    this.axisX = 0, this.axisY = 0, this.axisZ = 1,
+    this.axisX = 1, this.axisY = 0, this.axisZ = 0,
     this.limitLower = -3.14159,
     this.limitUpper =  3.14159,
   });
+
+  bool get isMovable => type == 'revolute' || type == 'continuous' || type == 'prismatic';
 }
 
 class UrdfRobot {
@@ -92,33 +99,71 @@ class UrdfRobot {
   final List<UrdfLink> links;
   final List<UrdfJoint> joints;
 
+  /// The file still contains xacro macros/expressions (`${...}`, `$(...)`,
+  /// `xacro:` tags), which this viewer does not evaluate.
+  final bool looksLikeXacro;
+
   const UrdfRobot({
     required this.name,
     required this.links,
     required this.joints,
+    this.looksLikeXacro = false,
   });
+
+  /// Mesh file names (see [UrdfGeometry.meshKey]) referenced by visuals.
+  Set<String> get meshKeys => {
+        for (final l in links)
+          for (final v in l.visuals)
+            if (v.geometry.type == 'mesh' && v.geometry.meshFile.isNotEmpty) v.geometry.meshKey,
+      };
 }
 
 class UrdfParserService {
   static UrdfRobot parse(String xmlText) {
     final doc = XmlDocument.parse(xmlText);
     final robot = doc.getElement('robot');
-    final robotName = robot?.getAttribute('name') ?? 'robot';
-
-    final links = <UrdfLink>[];
-    final joints = <UrdfJoint>[];
-
-    for (final linkEl in robot?.findElements('link') ?? <XmlElement>[]) {
-      links.add(_parseLink(linkEl));
+    if (robot == null) {
+      throw const FormatException('No <robot> element found');
     }
-    for (final jointEl in robot?.findElements('joint') ?? <XmlElement>[]) {
-      joints.add(_parseJoint(jointEl));
+    final robotName = robot.getAttribute('name') ?? 'robot';
+
+    // Top-level <material name="..."><color rgba="..."/></material>
+    final materials = <String, Color>{};
+    for (final m in robot.findElements('material')) {
+      final name = m.getAttribute('name');
+      final c = _color(m);
+      if (name != null && c != null) materials[name] = c;
     }
 
-    return UrdfRobot(name: robotName, links: links, joints: joints);
+    final links = [
+      for (final linkEl in robot.findElements('link')) _parseLink(linkEl, materials),
+    ];
+    final joints = [
+      for (final jointEl in robot.findElements('joint')) _parseJoint(jointEl),
+    ];
+
+    final looksLikeXacro = xmlText.contains(r'${') ||
+        xmlText.contains(r'$(') ||
+        robot.descendants.whereType<XmlElement>().any((e) => e.name.prefix == 'xacro');
+
+    return UrdfRobot(
+      name: robotName,
+      links: links,
+      joints: joints,
+      looksLikeXacro: looksLikeXacro,
+    );
   }
 
-  static UrdfLink _parseLink(XmlElement el) {
+  static Color? _color(XmlElement material) {
+    final rgba = material.getElement('color')?.getAttribute('rgba');
+    if (rgba == null) return null;
+    final v = rgba.trim().split(RegExp(r'\s+')).map((s) => double.tryParse(s) ?? 0).toList();
+    if (v.length < 3) return null;
+    int ch(double x) => (x.clamp(0.0, 1.0) * 255).round();
+    return Color.fromARGB(255, ch(v[0]), ch(v[1]), ch(v[2]));
+  }
+
+  static UrdfLink _parseLink(XmlElement el, Map<String, Color> materials) {
     final name = el.getAttribute('name') ?? 'link';
     final visuals = <UrdfVisual>[];
 
@@ -127,19 +172,12 @@ class UrdfParserService {
       final geomEl = visEl.getElement('geometry');
       if (geomEl == null) continue;
 
-      final geometry = _parseGeometry(geomEl);
-      String matColor = '';
+      Color? color;
       final matEl = visEl.getElement('material');
       if (matEl != null) {
-        final colorEl = matEl.getElement('color');
-        matColor = colorEl?.getAttribute('rgba') ?? '';
+        color = _color(matEl) ?? materials[matEl.getAttribute('name')];
       }
-
-      visuals.add(UrdfVisual(
-        origin: origin,
-        geometry: geometry,
-        materialColor: matColor,
-      ));
+      visuals.add(UrdfVisual(origin: origin, geometry: _parseGeometry(geomEl), color: color));
     }
 
     return UrdfLink(name: name, visuals: visuals);
@@ -171,9 +209,11 @@ class UrdfParserService {
 
     final meshEl = el.getElement('mesh');
     if (meshEl != null) {
+      final scaleAttr = meshEl.getAttribute('scale');
       return UrdfGeometry(
         type: 'mesh',
         meshFile: meshEl.getAttribute('filename') ?? '',
+        meshScale: scaleAttr == null ? const [1, 1, 1] : _parseVec3(scaleAttr, fallback: 1),
       );
     }
 
@@ -187,27 +227,30 @@ class UrdfParserService {
     final child  = el.getElement('child')?.getAttribute('link') ?? '';
     final origin = UrdfOrigin.fromElement(el.getElement('origin'));
 
-    final axisEl = el.getElement('axis');
-    final axis = _parseVec3(axisEl?.getAttribute('xyz') ?? '0 0 1');
+    // URDF default axis is (1, 0, 0)
+    final axis = _parseVec3(el.getElement('axis')?.getAttribute('xyz') ?? '1 0 0');
 
     final limitEl = el.getElement('limit');
-    final limitLower = double.tryParse(limitEl?.getAttribute('lower') ?? '') ?? -3.14159;
-    final limitUpper = double.tryParse(limitEl?.getAttribute('upper') ?? '') ??  3.14159;
+    var lower = double.tryParse(limitEl?.getAttribute('lower') ?? '');
+    var upper = double.tryParse(limitEl?.getAttribute('upper') ?? '');
+    // Continuous joints (and malformed limits) get a full turn
+    if (type == 'continuous' || lower == null || upper == null || upper <= lower) {
+      lower = type == 'prismatic' ? -0.5 : -3.14159;
+      upper = type == 'prismatic' ? 0.5 : 3.14159;
+    }
 
     return UrdfJoint(
       name: name, type: type, parent: parent, child: child, origin: origin,
       axisX: axis[0], axisY: axis[1], axisZ: axis[2],
-      limitLower: limitLower, limitUpper: limitUpper,
+      limitLower: lower, limitUpper: upper,
     );
   }
+}
 
-  static List<double> _parseVec3(String? s) {
-    if (s == null) return [0, 0, 0];
-    final parts = s.trim().split(RegExp(r'\s+'));
-    return [
-      double.tryParse(parts.elementAtOrNull(0) ?? '') ?? 0,
-      double.tryParse(parts.elementAtOrNull(1) ?? '') ?? 0,
-      double.tryParse(parts.elementAtOrNull(2) ?? '') ?? 0,
-    ];
-  }
+List<double> _parseVec3(String? s, {double fallback = 0}) {
+  if (s == null) return [fallback, fallback, fallback];
+  final parts = s.trim().split(RegExp(r'\s+'));
+  return [
+    for (var i = 0; i < 3; i++) double.tryParse(parts.elementAtOrNull(i) ?? '') ?? fallback,
+  ];
 }

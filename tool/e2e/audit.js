@@ -46,7 +46,14 @@ const TOPICS = [
   await shot('00_home');
 
   // Model viewer with the sample files (works without a robot)
-  for (const [file, name] of [['arm.urdf', '50_model_urdf'], ['cube.stl', '51_model_stl']]) {
+  const MODELS = [
+    ['50_model_urdf', ['arm.urdf']],
+    ['51_model_stl', ['cube.stl']],
+    ['52_model_dae', ['pyramid.dae']],
+    ['53_model_urdf_meshes', ['mesh_robot.urdf', 'cube.stl', 'pyramid.dae']],
+    ['54_model_urdf_missing_meshes', ['mesh_robot.urdf']],
+  ];
+  for (const [name, files] of MODELS) {
     await step(name, async () => {
       await page.getByText('Model Viewer').click();
       await wait(page, 1200);
@@ -54,7 +61,7 @@ const TOPICS = [
         page.waitForEvent('filechooser'),
         page.getByRole('button', { name: /Load File/ }).click(),
       ]);
-      await chooser.setFiles(path.join(__dirname, 'models', file));
+      await chooser.setFiles(files.map(f => path.join(__dirname, 'models', f)));
       await wait(page, 2500);
       await shot(name);
       await back(page);

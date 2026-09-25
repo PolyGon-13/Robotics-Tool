@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Small COLLADA sample: Y-up, centimeters, red material -->
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset><unit name="centimeter" meter="0.01"/><up_axis>Y_UP</up_axis></asset>
+  <library_effects>
+    <effect id="red-fx"><profile_COMMON><technique sid="common"><lambert>
+      <diffuse><color>0.85 0.2 0.15 1</color></diffuse>
+    </lambert></technique></profile_COMMON></effect>
+  </library_effects>
+  <library_materials><material id="red"><instance_effect url="#red-fx"/></material></library_materials>
+  <library_geometries>
+    <geometry id="pyr"><mesh>
+      <source id="pyr-pos">
+        <float_array id="pyr-pos-a" count="15">-5 0 -5  5 0 -5  5 0 5  -5 0 5  0 10 0</float_array>
+        <technique_common><accessor source="#pyr-pos-a" count="5" stride="3"/></technique_common>
+      </source>
+      <vertices id="pyr-v"><input semantic="POSITION" source="#pyr-pos"/></vertices>
+      <polylist material="mat" count="5">
+        <input semantic="VERTEX" source="#pyr-v" offset="0"/>
+        <vcount>4 3 3 3 3</vcount>
+        <p>0 1 2 3  0 4 1  1 4 2  2 4 3  3 4 0</p>
+      </polylist>
+    </mesh></geometry>
+  </library_geometries>
+  <library_visual_scenes><visual_scene id="scene">
+    <node id="n"><instance_geometry url="#pyr"><bind_material><technique_common>
+      <instance_material symbol="mat" target="#red"/>
+    </technique_common></bind_material></instance_geometry></node>
+  </visual_scene></library_visual_scenes>
+  <scene><instance_visual_scene url="#scene"/></scene>
+</COLLADA>
