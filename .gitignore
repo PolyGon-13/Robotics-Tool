@@ -53,3 +53,8 @@ android/key.properties
 *.keystore
 
 pubspec.lock
+# Non-mobile platforms (removed; keep them from being re-committed)
+/linux/
+/macos/
+/web/
+/windows/
