@@ -15,6 +15,7 @@ class TopicProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
+  ConnectionStatus? _status;
   Timer? _refreshTimer;
 
   List<RosTopic> get topics => _topics;
@@ -35,16 +36,22 @@ class TopicProvider extends ChangeNotifier {
   }
 
   void updateService(RosbridgeService? service, ConnectionStatus status) {
-    if (_service == service) return;
+    // service 인스턴스는 앱 전체에서 하나이므로 연결 상태 변화로 판단
+    if (_service == service && _status == status) return;
     _service = service;
+    _status = status;
 
     if (status == ConnectionStatus.connected) {
       _startAutoRefresh();
       loadTopics();
     } else {
       _stopAutoRefresh();
-      _topics = [];
-      notifyListeners();
+      // 자동 재연결 중(connecting)에는 기존 목록 유지
+      if (status != ConnectionStatus.connecting) {
+        _topics = [];
+        _error = null;
+        notifyListeners();
+      }
     }
   }
 

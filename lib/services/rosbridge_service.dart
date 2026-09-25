@@ -15,6 +15,8 @@ class RosbridgeService {
   final Map<String, Completer<Map<String, dynamic>>> _pendingCalls = {};
   final Map<String, StreamController<Map<String, dynamic>>> _topicControllers =
       {};
+  // 재연결 시 다시 보낼 subscribe 요청 (topic → payload)
+  final Map<String, Map<String, dynamic>> _subscribePayloads = {};
 
   ConnectionStatus _status = ConnectionStatus.disconnected;
   ConnectionStatus get status => _status;
@@ -48,6 +50,12 @@ class RosbridgeService {
     final myGen = ++_connectGeneration;
     _setStatus(ConnectionStatus.connecting);
 
+    // 재연결이면 끊어진 이전 채널 정리 (topic 스트림은 유지)
+    _subscription?.cancel();
+    _subscription = null;
+    _channel?.sink.close();
+    _channel = null;
+
     try {
       final uri = Uri.parse('ws://$_currentIp:$_currentPort');
       _channel = WebSocketChannel.connect(uri);
@@ -66,6 +74,11 @@ class RosbridgeService {
         onDone: ()    { if (myGen == _connectGeneration) _handleDone(); },
         cancelOnError: false,
       );
+
+      // 재연결 전에 구독 중이던 topic 복구
+      for (final payload in _subscribePayloads.values) {
+        _channel!.sink.add(jsonEncode(payload));
+      }
     } catch (e) {
       if (myGen != _connectGeneration) return;
       _handleError(e);
@@ -115,6 +128,7 @@ class RosbridgeService {
     }
     _reconnectAttempts++;
     _setStatus(ConnectionStatus.connecting);
+    _reconnectTimer?.cancel();
     _reconnectTimer = Timer(_reconnectDelay, _doConnect);
   }
 
@@ -142,6 +156,7 @@ class RosbridgeService {
       sc.close();
     }
     _topicControllers.clear();
+    _subscribePayloads.clear();
   }
 
   void _setStatus(ConnectionStatus s) {
@@ -195,6 +210,7 @@ class RosbridgeService {
         'type': type,
         'throttle_rate': throttleRate,
       };
+      _subscribePayloads[topic] = payload;
       _channel?.sink.add(jsonEncode(payload));
     }
     return _topicControllers[topic]!.stream;
@@ -203,6 +219,7 @@ class RosbridgeService {
   void unsubscribe(String topic) {
     if (_topicControllers.containsKey(topic)) {
       _topicControllers.remove(topic)?.close();
+      _subscribePayloads.remove(topic);
       final payload = {'op': 'unsubscribe', 'topic': topic};
       _channel?.sink.add(jsonEncode(payload));
     }

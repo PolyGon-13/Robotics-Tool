@@ -33,6 +33,9 @@ class ConnectionProvider extends ChangeNotifier {
     _service.onStatusChange = (s) {
       _status = s;
       if (s == ConnectionStatus.connected) {
+        // 연결 성공 → 최초 연결 타임아웃 해제 (이후 자동 재연결을 끊지 않도록)
+        _timeoutTimer?.cancel();
+        _timeoutTimer = null;
         _connectedIp = _ip;
         _connectedPort = _port;
         _errorMessage = null;
