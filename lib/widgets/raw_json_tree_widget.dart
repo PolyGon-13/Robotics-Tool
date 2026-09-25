@@ -107,6 +107,9 @@ class _ListNode extends StatefulWidget {
 
 class _ListNodeState extends State<_ListNode> {
   bool _expanded = false;
+  // Big arrays (scan ranges, maps) are shown a page at a time
+  static const _page = 100;
+  int _shown = _page;
 
   @override
   Widget build(BuildContext context) {
@@ -148,12 +151,19 @@ class _ListNodeState extends State<_ListNode> {
           ),
         ),
         if (_expanded)
-          ...widget.data.asMap().entries.map((e) {
-            return Padding(
+          for (var i = 0; i < widget.data.length && i < _shown; i++)
+            Padding(
               padding: EdgeInsets.only(left: (widget.depth + 1) * 12.0),
-              child: RawJsonTreeWidget(data: e.value, label: '[${e.key}]'),
-            );
-          }),
+              child: RawJsonTreeWidget(data: widget.data[i], label: '[$i]'),
+            ),
+        if (_expanded && widget.data.length > _shown)
+          Padding(
+            padding: EdgeInsets.only(left: (widget.depth + 1) * 12.0),
+            child: TextButton(
+              onPressed: () => setState(() => _shown += _page * 5),
+              child: Text('Show more (${widget.data.length - _shown} left)'),
+            ),
+          ),
       ],
     );
   }

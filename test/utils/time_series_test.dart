@@ -3,13 +3,16 @@ import 'package:robotics_tool/utils/time_series.dart';
 
 void main() {
   group('TimeSeries', () {
-    test('drops samples older than maxAge', () {
+    test('keeps the maxAge window and bounds memory', () {
       final ts = TimeSeries(maxAge: 10);
-      for (var t = 0.0; t <= 20; t += 1) {
+      for (var t = 0.0; t <= 500; t += 1) {
         ts.add(t, t);
       }
-      expect(ts.samples.first.t, 10);
-      expect(ts.samples.last.v, 20);
+      // Old samples are removed in chunks, so a few may linger
+      expect(ts.samples.length, lessThan(11 + 40));
+      expect(ts.samples.where((s) => s.t >= 490).length, 11);
+      expect(ts.samples.last.v, 500);
+      expect(ts.range(since: 490), (490.0, 500.0));
     });
 
     test('ignores non-finite values', () {

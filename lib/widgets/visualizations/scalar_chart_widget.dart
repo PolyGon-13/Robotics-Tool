@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -35,11 +36,25 @@ class _ScalarChartWidgetState extends MsgVizState<ScalarChartWidget> {
   int _n = 0;
   int _arrayLength = 0;
 
-  bool get _isArray => field(widget.msg, widget.path) is List;
+  bool _isArray = false;
+
+  /// uint8[] / byte[] fields (UInt8MultiArray, ByteMultiArray) arrive from
+  /// rosbridge as base64 strings.
+  static dynamic _value(dynamic raw) {
+    if (raw is String) {
+      try {
+        return base64Decode(raw).toList();
+      } on FormatException {
+        return raw;
+      }
+    }
+    return raw;
+  }
 
   @override
   void onMessage(Map<String, dynamic> msg) {
-    final raw = field(msg, widget.path);
+    final raw = _value(field(msg, widget.path));
+    _isArray = raw is List;
     _current = raw is List ? doubleList(raw) : [asDouble(raw)];
     _arrayLength = raw is List ? raw.length : 1;
     final shown = math.min(_current.length, _maxArraySeries);

@@ -30,10 +30,15 @@ class _JointStateWidgetState extends MsgVizState<JointStateWidget> {
 
   @override
   void onMessage(Map<String, dynamic> msg) {
-    final names = asList(msg['name']).map((e) => e.toString()).toList();
     final pos = doubleList(msg['position']);
     final vel = doubleList(msg['velocity']);
     final eff = doubleList(msg['effort']);
+    var names = asList(msg['name']).map((e) => e.toString()).toList();
+    if (names.isEmpty) {
+      // Unnamed joints: fall back to their index
+      final n = [pos.length, vel.length, eff.length].reduce(math.max);
+      names = [for (var i = 0; i < n; i++) 'joint[$i]'];
+    }
     for (var i = 0; i < names.length; i++) {
       final j = _joints.putIfAbsent(names[i], () => _Joint(names[i]));
       j.pos = i < pos.length ? pos[i] : null;
@@ -87,14 +92,14 @@ class _JointStateWidgetState extends MsgVizState<JointStateWidget> {
           child: Column(
             children: [
               TimeSeriesChart(
-                title: 'Position (rad)',
+                title: 'Position (rad, or m for prismatic joints)',
                 unit: 'rad',
                 minSpan: 0.05,
                 series: [ChartSeries('position', AxisColors.z, sel.posHist)],
               ),
               const SizedBox(height: 12),
               TimeSeriesChart(
-                title: 'Velocity (rad/s)',
+                title: 'Velocity (rad/s, or m/s)',
                 unit: 'rad/s',
                 minSpan: 0.1,
                 includeZero: true,

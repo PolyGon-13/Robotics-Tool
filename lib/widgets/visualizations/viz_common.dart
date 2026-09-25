@@ -1,11 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../utils/time_series.dart';
 
+/// Every received message, in order. Provided by the echo screen so
+/// visualizers see each message even when several arrive within one frame
+/// (a rebuild only carries the latest one).
+class MsgFeed extends InheritedWidget {
+  final Stream<Map<String, dynamic>> stream;
+
+  const MsgFeed({super.key, required this.stream, required super.child});
+
+  static Stream<Map<String, dynamic>>? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<MsgFeed>()?.stream;
+
+  @override
+  bool updateShouldNotify(MsgFeed old) => old.stream != stream;
+}
+
 /// Base for visualizers that keep history across messages.
 ///
-/// [onMessage] runs once per received message (first one in initState),
+/// [onMessage] runs once per received message (the first one in initState),
 /// never on plain rebuilds such as the screen's periodic status refresh.
+/// With a [MsgFeed] above, every message is delivered; without one, only the
+/// messages the widget is rebuilt with.
 abstract class MsgViz extends StatefulWidget {
   final String topic;
   final Map<String, dynamic> msg;
@@ -16,16 +35,44 @@ abstract class MsgViz extends StatefulWidget {
 abstract class MsgVizState<T extends MsgViz> extends State<T> {
   void onMessage(Map<String, dynamic> msg);
 
+  StreamSubscription<Map<String, dynamic>>? _feedSub;
+  Stream<Map<String, dynamic>>? _feed;
+  Map<String, dynamic>? _last;
+
+  void _process(Map<String, dynamic> msg) {
+    if (identical(msg, _last)) return;
+    _last = msg;
+    onMessage(msg);
+  }
+
   @override
   void initState() {
     super.initState();
-    onMessage(widget.msg);
+    _process(widget.msg);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final feed = MsgFeed.maybeOf(context);
+    if (feed == _feed) return;
+    _feedSub?.cancel();
+    _feed = feed;
+    // The owner rebuilds after each message, so no setState needed here
+    _feedSub = feed?.listen(_process);
   }
 
   @override
   void didUpdateWidget(T oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.msg, widget.msg)) onMessage(widget.msg);
+    // Without a feed, messages only arrive through rebuilds
+    if (_feed == null) _process(widget.msg);
+  }
+
+  @override
+  void dispose() {
+    _feedSub?.cancel();
+    super.dispose();
   }
 }
 
@@ -84,7 +131,14 @@ class VizCard extends StatelessWidget {
                           style: Theme.of(context).textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.w700, color: cs.primary)),
                     ),
-                    ?trailing,
+                    if (trailing != null)
+                      Flexible(
+                        child: DefaultTextStyle.merge(
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          child: trailing!,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -195,8 +249,11 @@ class StatusPill extends StatelessWidget {
               Icon(icon, size: 14, color: color),
               const SizedBox(width: 4),
             ],
-            Text(text,
-                style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12)),
+            Flexible(
+              child: Text(text,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12)),
+            ),
           ],
         ),
       );

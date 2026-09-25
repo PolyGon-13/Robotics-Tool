@@ -7,6 +7,7 @@ import '../providers/connection_provider.dart';
 import '../utils/rate_meter.dart';
 import '../widgets/raw_json_tree_widget.dart';
 import '../widgets/visualizations/visualizer_registry.dart';
+import '../widgets/visualizations/viz_common.dart';
 
 class VisualizationScreen extends StatefulWidget {
   final String topic;
@@ -24,6 +25,9 @@ class VisualizationScreen extends StatefulWidget {
 
 class _VisualizationScreenState extends State<VisualizationScreen> {
   StreamSubscription? _sub;
+  // Every message for the visualizer (see MsgFeed); sync so it is processed
+  // before the rebuild it triggers.
+  final _feed = StreamController<Map<String, dynamic>>.broadcast(sync: true);
   late final ConnectionProvider _conn;
   final RateMeter _rate = RateMeter();
   Timer? _ticker;
@@ -47,12 +51,14 @@ class _VisualizationScreenState extends State<VisualizationScreen> {
   void _onMsg(Map<String, dynamic> msg) {
     _rate.tick();
     if (_paused) return;
+    _feed.add(msg);
     setState(() => _latestMsg = msg);
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
+    _feed.close();
     _sub?.cancel();
     _conn.service.unsubscribe(widget.topic);
     super.dispose();
@@ -121,7 +127,7 @@ class _VisualizationScreenState extends State<VisualizationScreen> {
       index: _showRaw ? 1 : 0,
       sizing: StackFit.expand,
       children: [
-        buildVisualizer(widget.type, widget.topic, msg),
+        MsgFeed(stream: _feed.stream, child: buildVisualizer(widget.type, widget.topic, msg)),
         _showRaw ? raw : const SizedBox.shrink(),
       ],
     );

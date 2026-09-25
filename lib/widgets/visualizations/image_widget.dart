@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../utils/ros_msg.dart';
@@ -109,6 +109,15 @@ DecodedImage decodeRosImage({
   return (c(r), c(g), c(b));
 }
 
+DecodedImage _decodeTask((String, String, int, int, int?, bool) a) => decodeRosImage(
+      raw: base64Decode(a.$1),
+      encoding: a.$2,
+      width: a.$3,
+      height: a.$4,
+      step: a.$5,
+      bigEndian: a.$6,
+    );
+
 class ImageWidget extends StatefulWidget {
   final Map<String, dynamic> msg;
   const ImageWidget({super.key, required this.msg});
@@ -156,14 +165,15 @@ class _ImageWidgetState extends State<ImageWidget> {
       if (data is! String || data.isEmpty || w == 0 || h == 0) {
         throw const FormatException('Message has no image data');
       }
-      final decoded = decodeRosImage(
-        raw: base64Decode(data),
-        encoding: msg['encoding']?.toString() ?? 'rgb8',
-        width: w,
-        height: h,
-        step: asInt(msg['step']),
-        bigEndian: asInt(msg['is_bigendian']) == 1,
-      );
+      // base64 + per-pixel conversion off the UI thread (large frames)
+      final decoded = await compute(_decodeTask, (
+        data,
+        msg['encoding']?.toString() ?? 'rgb8',
+        w,
+        h,
+        asInt(msg['step']),
+        asInt(msg['is_bigendian']) == 1,
+      ));
       final completer = Completer<ui.Image>();
       ui.decodeImageFromPixels(decoded.rgba, w, h, ui.PixelFormat.rgba8888, completer.complete);
       final img = await completer.future;

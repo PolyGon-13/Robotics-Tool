@@ -31,7 +31,8 @@ class TimeSeries {
     while (drop < samples.length && samples[drop].t < cutoff) {
       drop++;
     }
-    if (drop > 0) samples.removeRange(0, drop);
+    // Remove in chunks: shifting the whole list on every sample is O(n)
+    if (drop > 32 || drop > samples.length ~/ 4) samples.removeRange(0, drop);
   }
 
   void clear() => samples.clear();

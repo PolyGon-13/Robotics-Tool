@@ -37,8 +37,10 @@ class _TwistWidgetState extends MsgVizState<TwistWidget> {
       if (_l[i].abs() > 1e-6) _linUsed[i] = true;
       if (_a[i].abs() > 1e-6) _angUsed[i] = true;
     }
-    _peakLinear = math.max(_peakLinear, math.sqrt(_l[0] * _l[0] + _l[1] * _l[1]));
-    _peakAngular = math.max(_peakAngular, _a[2].abs());
+    // Scale follows recent peaks and slowly relaxes, so one spike does not
+    // shrink the arrow for the rest of the session
+    _peakLinear = math.max(0.5, math.max(_peakLinear * 0.995, math.sqrt(_l[0] * _l[0] + _l[1] * _l[1])));
+    _peakAngular = math.max(1.0, math.max(_peakAngular * 0.995, _a[2].abs()));
   }
 
   @override

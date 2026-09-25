@@ -123,8 +123,9 @@ class _HorizonPainter extends CustomPainter {
     canvas.clipPath(Path()..addOval(Rect.fromCircle(center: c, radius: r)));
     canvas.translate(c.dx, c.dy);
     canvas.rotate(-roll);
-    // 45° of pitch moves the horizon by one radius
-    final shift = (pitch / (math.pi / 4)).clamp(-1.5, 1.5) * r;
+    // 45° of pitch moves the horizon by one radius. REP 103: positive pitch
+    // is nose down, so the horizon moves up (more ground visible).
+    final shift = (-pitch / (math.pi / 4)).clamp(-1.5, 1.5) * r;
     canvas.drawRect(Rect.fromLTRB(-2 * r, -2 * r, 2 * r, shift),
         Paint()..color = const Color(0xFF64B5F6));
     canvas.drawRect(Rect.fromLTRB(-2 * r, shift, 2 * r, 2 * r),

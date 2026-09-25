@@ -1,4 +1,6 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' show PointMode;
 
 import 'package:flutter/material.dart';
 
@@ -19,14 +21,24 @@ class _LaserScanWidgetState extends MsgVizState<LaserScanWidget> {
   double? _manualRange; // null = auto zoom
   double _pinchStart = 1;
 
-  @override
-  void onMessage(Map<String, dynamic> msg) => _scan = parseScan(msg);
+  double? _autoRange;
 
-  double get _viewRange => _manualRange ?? _scan.autoViewRange();
+  @override
+  void onMessage(Map<String, dynamic> msg) {
+    _scan = parseScan(msg);
+    // Smooth the automatic zoom so it does not jump with every scan
+    final target = _scan.autoViewRange();
+    final prev = _autoRange;
+    _autoRange = prev == null || target > prev * 1.5 || target < prev / 1.5
+        ? target
+        : prev * 0.85 + target * 0.15;
+  }
+
+  double get _viewRange => _manualRange ?? _autoRange ?? 1;
 
   void _zoom(double factor) => setState(() {
-        final max = _scan.rangeMax > 0 ? _scan.rangeMax * 1.2 : 100.0;
-        _manualRange = (_viewRange * factor).clamp(0.25, max);
+        final max = math.max(0.5, _scan.rangeMax > 0 ? _scan.rangeMax * 1.2 : 100.0);
+        _manualRange = (_viewRange * factor).clamp(0.1, max);
       });
 
   @override
@@ -45,7 +57,7 @@ class _LaserScanWidgetState extends MsgVizState<LaserScanWidget> {
                 onScaleStart: (_) => _pinchStart = _viewRange,
                 onScaleUpdate: (d) {
                   if (d.pointerCount < 2) return;
-                  setState(() => _manualRange = (_pinchStart / d.scale).clamp(0.25, 100.0));
+                  setState(() => _manualRange = (_pinchStart / d.scale).clamp(0.1, 100.0));
                 },
                 onDoubleTap: () => setState(() => _manualRange = null),
                 child: CustomPaint(
@@ -60,12 +72,14 @@ class _LaserScanWidgetState extends MsgVizState<LaserScanWidget> {
             ),
             Row(
               children: [
-                Text(
-                  'View ±${fmtNum(_viewRange, sig: 2)} m'
-                  '${_manualRange == null ? ' (auto)' : ''}',
-                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                Expanded(
+                  child: Text(
+                    'View ±${fmtNum(_viewRange, sig: 2)} m'
+                    '${_manualRange == null ? ' (auto)' : ''}',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                  ),
                 ),
-                const Spacer(),
                 IconButton(
                   tooltip: 'Zoom out',
                   icon: const Icon(Icons.zoom_out),
@@ -122,7 +136,7 @@ class _LaserScanWidgetState extends MsgVizState<LaserScanWidget> {
               valueSize: 16),
           StatTile(
               label: 'Field of view',
-              value: '${fmtNum((_scan.angleMax - _scan.angleMin) * 180 / math.pi, sig: 3)}°',
+              value: '${fmtNum((_scan.angleMax - _scan.angleMin).abs() * 180 / math.pi, sig: 3)}°',
               valueSize: 16),
           StatTile(
               label: 'Range limits',
@@ -175,11 +189,13 @@ class _ScanPainter extends CustomPainter {
     canvas.clipRect(Offset.zero & size);
 
     // Field of view wedge (e.g. 270° lidars)
-    final fov = scan.angleMax - scan.angleMin;
+    // Scans may run clockwise (negative increment): use the covered range
+    final aHi = math.max(scan.angleMin, scan.angleMax);
+    final fov = (scan.angleMax - scan.angleMin).abs();
     if (fov > 0 && fov < 2 * math.pi - 1e-3) {
       final rect = Rect.fromCircle(center: c, radius: radius);
       // screen angle of sensor angle a: forward (a=0) is -90°, CCW sensor = CCW on screen
-      canvas.drawArc(rect, -math.pi / 2 - scan.angleMax, fov, true,
+      canvas.drawArc(rect, -math.pi / 2 - aHi, fov, true,
           Paint()..color = colors.primary.withValues(alpha: 0.05));
     }
 
@@ -203,14 +219,24 @@ class _ScanPainter extends CustomPainter {
     _text(canvas, 'L', Offset(4, c.dy - 7), colors.onSurfaceVariant, 11, bold: true);
     _text(canvas, 'R', Offset(size.width - 12, c.dy - 7), colors.onSurfaceVariant, 11, bold: true);
 
-    // Returns, colored by distance (near = red, far = blue)
-    final dot = Paint();
+    // Returns, colored by distance (near = red, far = blue); one batched
+    // draw call per color band instead of one circle per point
+    const bands = 12;
     final dotR = math.max(1.6, math.min(3.0, size.shortestSide / 160));
+    final byBand = List.generate(bands, (_) => <double>[]);
     for (final p in scan.points) {
       if (p.range > viewRange * 1.5) continue;
-      final hue = (p.range / viewRange).clamp(0.0, 1.0) * 220;
-      dot.color = HSVColor.fromAHSV(1, hue, 0.85, 0.9).toColor();
-      canvas.drawCircle(toScreen(p.x, p.y), dotR, dot);
+      final band = ((p.range / viewRange).clamp(0.0, 1.0) * (bands - 1)).round();
+      final s = toScreen(p.x, p.y);
+      byBand[band]..add(s.dx)..add(s.dy);
+    }
+    final dot = Paint()
+      ..strokeWidth = dotR * 2
+      ..strokeCap = StrokeCap.round;
+    for (var b = 0; b < bands; b++) {
+      if (byBand[b].isEmpty) continue;
+      dot.color = HSVColor.fromAHSV(1, b / (bands - 1) * 220, 0.85, 0.9).toColor();
+      canvas.drawRawPoints(PointMode.points, Float32List.fromList(byBand[b]), dot);
     }
 
     // Closest obstacle

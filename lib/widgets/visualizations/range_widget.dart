@@ -25,6 +25,7 @@ class _RangeWidgetState extends MsgVizState<RangeWidget> {
   @override
   Widget build(BuildContext context) {
     final msg = widget.msg;
+    final present = msg.containsKey('range');
     final r = asDouble(msg['range']);
     final lo = numAt(msg, 'min_range', 0);
     final hi = numAt(msg, 'max_range', 0);
@@ -32,7 +33,11 @@ class _RangeWidgetState extends MsgVizState<RangeWidget> {
     // REP 117: +inf = nothing detected, -inf = object closer than min_range
     final String text;
     Color? color;
-    if (r == null || r.isNaN) {
+    if (r == null && present) {
+      // rosbridge turns ±inf / NaN into null; +inf ("nothing in range") is
+      // by far the most common, e.g. an ultrasonic sensor facing open space
+      text = 'Out of range';
+    } else if (r == null || r.isNaN) {
       text = 'No reading';
     } else if (r == double.infinity || (hi > 0 && r > hi)) {
       text = 'Clear';
@@ -53,7 +58,7 @@ class _RangeWidgetState extends MsgVizState<RangeWidget> {
             StatTile(
               label: 'Distance',
               value: text,
-              unit: r != null && r.isFinite ? 'm' : '',
+              unit: r != null && r.isFinite && r >= lo && (hi <= 0 || r <= hi) ? 'm' : '',
               color: color,
               valueSize: 44,
             ),

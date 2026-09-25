@@ -41,7 +41,9 @@ class _BatteryWidgetState extends MsgVizState<BatteryWidget> {
   @override
   Widget build(BuildContext context) {
     final msg = widget.msg;
-    final pct = _finite('percentage');
+    var pct = _finite('percentage');
+    // REP: 0..1, but some drivers publish 0..100
+    if (pct != null && pct > 1.0 && pct <= 100) pct /= 100;
     final status = _status[asInt(msg['power_supply_status'])];
     final healthCode = asInt(msg['power_supply_health']) ?? 0;
     final health = _health[healthCode];
@@ -60,7 +62,11 @@ class _BatteryWidgetState extends MsgVizState<BatteryWidget> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 8,
               children: [
                 StatTile(
                   label: 'Charge',
@@ -69,9 +75,8 @@ class _BatteryWidgetState extends MsgVizState<BatteryWidget> {
                   color: color,
                   valueSize: 44,
                 ),
-                const Spacer(),
                 Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (status != null) StatusPill(status.$1, status.$3, icon: status.$2),
                     if (health != null) ...[
