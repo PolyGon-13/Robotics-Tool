@@ -40,6 +40,7 @@ Mock server controls:
 |---|---|
 | `kill -USR1 <pid>` | Drop every client connection (network blip) |
 | `kill -USR2 <pid>` | Pause / resume all topic streams (publisher stalls) |
+| `kill -HUP <pid>` | Stop / resume answering while keeping sockets open (Wi-Fi drop) |
 
 `contact_sheet.js out.png 4 a.png b.png ...` tiles screenshots into one image
 for review.

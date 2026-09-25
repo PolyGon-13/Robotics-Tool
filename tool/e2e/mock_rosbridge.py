@@ -8,6 +8,8 @@ Only depends on `websockets` (pip install websockets).
 - Logs every op it receives as one JSON line on stdout
 - SIGUSR1 drops every client connection (simulates a network blip)
 - SIGUSR2 pauses/resumes all streams (simulates a publisher that stalls)
+- SIGHUP makes the server go silent / come back while keeping sockets open
+  (simulates Wi-Fi dropping without closing TCP)
 
 Usage: python3 mock_rosbridge.py [port]
 """
@@ -99,6 +101,7 @@ DEPS = {"geometry_msgs/Twist": ["geometry_msgs/Vector3"],
 
 clients = set()
 paused = False
+silent = False
 T0 = time.time()
 
 
@@ -273,7 +276,7 @@ async def stream(ws, topic):
         return
     k = 0
     while True:
-        if not paused:
+        if not paused and not silent:
             await ws.send(json.dumps({"op": "publish", "topic": topic, "msg": fake_msg(topic, k)},
                                      allow_nan=False))
             k += 1
@@ -289,6 +292,8 @@ async def handler(ws):
         async for raw in ws:
             m = json.loads(raw)
             op = m.get("op")
+            if silent:
+                continue
             extra = {k: m[k] for k in ("service", "topic", "type") if k in m}
             if op == "publish":  # summarize velocity commands for the joystick scenario
                 tw = m.get("msg", {}).get("twist", m.get("msg", {}))
@@ -337,7 +342,13 @@ async def main(port):
         paused = not paused
         log(ev="streams_paused" if paused else "streams_resumed")
 
+    def toggle_silent():
+        global silent
+        silent = not silent
+        log(ev="silent" if silent else "responsive")
+
     loop.add_signal_handler(signal.SIGUSR1, drop_all)
+    loop.add_signal_handler(signal.SIGHUP, toggle_silent)
     loop.add_signal_handler(signal.SIGUSR2, toggle_pause)
     async with websockets.serve(handler, "0.0.0.0", port, max_size=None):
         log(ev="listening", port=port)

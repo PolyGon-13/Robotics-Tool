@@ -13,7 +13,8 @@ Check on a ROS2 robot from your phone, without opening a laptop. Robotics Tool c
 ### Connect
 - Enter an IP, `host:port`, or paste a `ws://…` URL. The last 5 working addresses are one tap away.
 - If a connection fails, the app shows a checklist of the usual causes (rosbridge not running, different Wi-Fi, wrong IP, firewall).
-- If the link drops, the app reconnects automatically, shows a banner while it retries, and restores every open topic stream.
+- If the link drops, the app reconnects automatically, shows a banner while it retries, and restores every open topic stream and publisher.
+- A link that silently dies, for example when the robot drives out of Wi-Fi range, is detected within about 5 s by a keepalive check. It is not left showing "connected".
 
 ### Topic Monitor
 - Topics are sorted and searchable by name or type, with filters by message family. System topics (`/rosout`, `/parameter_events`) are hidden until you ask for them.
@@ -43,7 +44,7 @@ Charts share one style: a real time axis, a legend with the live value and unit,
 <img src="docs/screenshots/odometry.png" width="200"/> <img src="docs/screenshots/imu.png" width="200"/> <img src="docs/screenshots/battery.png" width="200"/> <img src="docs/screenshots/tf.png" width="200"/>
 
 ### Publish
-- **Joystick** for `Twist` / `TwistStamped` topics. Commands are sent at 10 Hz only while you hold the stick. Releasing it, pressing **STOP**, or leaving the screen sends zero velocity three times. Maximum linear and turn speeds are adjustable.
+- **Joystick** for `Twist` / `TwistStamped` topics. Commands are sent at 10 Hz only while you hold the stick. Releasing it, pressing **STOP**, or leaving the screen sends zero velocity three times, and keeps retrying if the link is reconnecting. Maximum linear and turn speeds are adjustable.
 - **JSON editor** for any message type. The template is generated from the message definition through `rosapi`, with Format and reset buttons. You can publish once or repeat at 1–10 Hz, and the app tells you when a message could not be sent.
 
 **Demo:** publishing a topic in real time.
@@ -56,8 +57,11 @@ Charts share one style: a real time axis, a legend with the live value and unit,
 - Tap a node to see what it publishes and subscribes to, and open any of those topics.
 
 ### 3D Model Viewer
-- Load an STL or URDF file (box, cylinder, and sphere geometry). Models are shown Z-up as in ROS and scaled to fit.
-- For URDF files, move the joints with sliders and highlight individual links.
+- Open **STL** (binary or ASCII), **COLLADA (.dae)** or **URDF** files. Models are shown Z-up as in ROS and scaled to fit, with a ground grid and axis gizmo. Drag to orbit, pinch to zoom, use two fingers to pan, and double-tap to reset.
+- For a URDF that uses meshes, select the `.urdf` together with its `.stl`/`.dae` files. They are matched by file name, and `<mesh scale>` is applied. Missing meshes are listed and can be added afterwards.
+- URDF colors (inline and named materials) are applied. Move joints with sliders (degrees, or meters for prismatic joints) and highlight individual links.
+- xacro files are detected, and the viewer shows the `xacro` command that converts them.
+- Tested with the TurtleBot3 Burger URDF and meshes (~150k triangles) and the R2D2 model from `urdf_tutorial`.
 
 <img src="docs/screenshots/graph.png" width="200"/> <img src="docs/screenshots/urdf.png" width="200"/> <img src="docs/screenshots/connect_help.png" width="200"/> <img src="docs/screenshots/laser_scan_dark.png" width="200"/>
 
@@ -111,7 +115,7 @@ flutter analyze
 flutter test
 ```
 
-`tool/e2e/` contains a fake rosbridge server that simulates a small robot with 17 topics, plus browser-driven checks that screenshot every screen and test reconnects, stale data, and the joystick. No ROS2 install or Android device is needed. See [tool/e2e/README.md](tool/e2e/README.md).
+`tool/e2e/` contains a fake rosbridge server that simulates a small robot with 17 topics, plus browser-driven checks. They screenshot every screen (including at 360 dp) and test reconnects, dead links, stale data, and the joystick. No ROS2 install or Android device is needed. See [tool/e2e/README.md](tool/e2e/README.md).
 
 The development plan and audit notes are in [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 

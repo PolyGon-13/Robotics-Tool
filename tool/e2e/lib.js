@@ -8,15 +8,20 @@ const ROS_PORT = Number(process.env.ROS_PORT || 9090);
 async function launch({ dark = false } = {}) {
   const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader'] });
   const page = await browser.newPage({
-    viewport: { width: 412, height: 860 },   // typical Android phone (dp)
+    viewport: { width: Number(process.env.VIEW_W || 412), height: 860 },   // Android phone (dp); VIEW_W=360 for small phones
     deviceScaleFactor: 1,
     locale: 'en-US',                          // headless Chromium has no locale otherwise
     colorScheme: dark ? 'dark' : 'light',
   });
   const errors = [];
+  // Name the step that produced an error (set by the scripts via errors.step)
+  errors.step = '';
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => {
-    if (/EXCEPTION|Assertion|Another exception|overflowed/i.test(m.text())) errors.push(m.text().slice(0, 400));
+    // Keep the first report in full (it has the stack); repeats are short
+    if (/EXCEPTION|Assertion|Another exception|overflowed/i.test(m.text())) {
+      errors.push(m.text().slice(0, errors.length ? 400 : 6000));
+    }
   });
   await page.goto(APP_URL);
   await page.waitForSelector('flt-semantics', { state: 'attached', timeout: 30000 });

@@ -130,6 +130,12 @@ class SceneGeometry {
   }
 }
 
+/// Sort bucket for a triangle depth: 0 = farthest. [depth] is stored as
+/// float32, so it can round slightly past the float64 [dMax]; the result is
+/// clamped to a valid index.
+int depthBucket(double depth, double dMax, double span, int buckets) =>
+    span > 0 ? ((dMax - depth) / span * (buckets - 1)).floor().clamp(0, buckets - 1) : 0;
+
 /// Orbit view of a [SceneGeometry]: drag to rotate, pinch to zoom, two
 /// fingers to pan, double-tap to reset. Z is up, like RViz.
 class SceneView extends StatefulWidget {
@@ -329,7 +335,7 @@ class _ScenePainter extends CustomPainter {
     final key = Int32List(n);
     final count = Int32List(2 * buckets + 1);
     for (var i = 0; i < n; i++) {
-      var k = span > 0 ? ((dMax - dep[i]) / span * (buckets - 1)).floor() : 0;
+      var k = depthBucket(dep[i], dMax, span, buckets);
       if (back[i] == 0) k += buckets;
       key[i] = k;
       count[k + 1]++;

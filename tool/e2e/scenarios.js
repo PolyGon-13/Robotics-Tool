@@ -80,6 +80,34 @@ const SCENARIOS = {
     if (has(ls, /^Topic Monitor$/)) throw new Error('kicked back to home screen');
   },
 
+  // Link dies without closing the socket: the app must drop it on its own
+  // (keepalive probe) and warn, then recover when the server answers again.
+  async deadLinkDetected(page) {
+    await connect(page);
+    await openEcho(page, '/battery_voltage');
+    const from = logLength();
+    signalMock('SIGHUP');             // server stops answering, sockets stay open
+    try {
+      await wait(page, 8000);         // 3 s idle + 2 s probe + slack
+      const ops = mockOps(from);
+      const silentAt = ops.findIndex(o => o.ev === 'silent');
+      const dropped = ops.slice(silentAt).find(o => o.ev === 'client_disconnected');
+      if (silentAt < 0 || !dropped) throw new Error('app did not drop the dead connection');
+      const delay = dropped.t - ops[silentAt].t;
+      if (delay > 7) throw new Error(`dead link detected only after ${delay.toFixed(1)} s`);
+      const ls = await labels(page);
+      if (!has(ls, /Disconnected|reconnecting|No data/i)) {
+        throw new Error(`no warning on screen; labels=${JSON.stringify(ls).slice(0, 300)}`);
+      }
+    } finally {
+      signalMock('SIGHUP');           // back to normal
+    }
+    await wait(page, 9000);
+    const a = await page.screenshot();
+    await wait(page, 2500);
+    if (a.equals(await page.screenshot())) throw new Error('stream did not resume after the link came back');
+  },
+
   // Publisher stalls: the echo screen must say data is stale.
   async staleDataWarning(page) {
     await connect(page);

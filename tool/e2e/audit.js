@@ -17,8 +17,13 @@ const TOPICS = [
 
 (async () => {
   const { browser, page, errors } = await launch({ dark });
+  let lastErrors = 0;
   const shot = async name => {
     await page.screenshot({ path: `${out}/${name}${suffix}.png` });
+    if (errors.length > lastErrors) {
+      console.log(`!! errors while on ${name}: ${errors.length - lastErrors}`);
+      lastErrors = errors.length;
+    }
     console.log(`[${name}]`, JSON.stringify(await labels(page)).slice(0, 300));
   };
   // Return to the Topics tab after a failed step so later steps can run
