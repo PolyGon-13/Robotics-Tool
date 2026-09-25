@@ -59,3 +59,7 @@ pubspec.lock
 /macos/
 /web/
 /windows/
+
+# E2E screenshots (tool/e2e)
+e2e-shots/
+e2e-fail-*.png
