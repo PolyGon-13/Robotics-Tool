@@ -60,7 +60,7 @@ class _OdometryWidgetState extends MsgVizState<OdometryWidget> {
         child: StatRow([
           StatTile.num('X', _x, unit: 'm'),
           StatTile.num('Y', _y, unit: 'm'),
-          StatTile(label: 'Heading', value: '${radToDeg(_yaw).toStringAsFixed(1)}°'),
+          StatTile(label: 'Heading', value: '${fmtFixed(radToDeg(_yaw), 1)}°'),
         ]),
       ),
       VizCard(
@@ -106,7 +106,7 @@ class _OdometryWidgetState extends MsgVizState<OdometryWidget> {
               if (showVy) StatTile.num('Sideways', _vy, unit: 'm/s'),
               StatTile(
                   label: 'Turn rate',
-                  value: radToDeg(_wz).toStringAsFixed(1),
+                  value: fmtFixed(radToDeg(_wz), 1),
                   unit: '°/s'),
             ]),
             const SizedBox(height: 12),

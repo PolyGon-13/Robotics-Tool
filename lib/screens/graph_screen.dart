@@ -11,6 +11,11 @@ import '../widgets/topic_action_bottom_sheet.dart';
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
+const double _nodeFont = 13;
+
+/// Never zoom out so far that names are unreadable on a phone; pan instead.
+const double _minFitScale = 0.85;
+
 class _LNode {
   final String name;
   double x = 0, y = 0, w = 0, h = 0;
@@ -62,15 +67,33 @@ class _GraphScreenState extends State<GraphScreen> {
 
   final TransformationController _tc = TransformationController();
   bool _needFit = false;
+  bool _showLabels = false;
+  ConnectionProvider? _conn;
+  ConnectionStatus? _lastStatus;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadGraph());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _conn = context.read<ConnectionProvider>()..addListener(_onConnection);
+      _lastStatus = _conn!.status;
+      _loadGraph();
+    });
+  }
+
+  /// Reload after an automatic reconnect: nodes may have restarted.
+  void _onConnection() {
+    final s = _conn!.status;
+    if (s == ConnectionStatus.connected && _lastStatus != ConnectionStatus.connected) {
+      _loadGraph();
+    }
+    _lastStatus = s;
   }
 
   @override
   void dispose() {
+    _conn?.removeListener(_onConnection);
     _tc.dispose();
     super.dispose();
   }
@@ -203,7 +226,7 @@ class _GraphScreenState extends State<GraphScreen> {
     for (final n in nodes) {
       final tp = TextPainter(
         text: TextSpan(
-            text: n.name, style: const TextStyle(fontSize: 11, height: 1.2)),
+            text: n.name, style: const TextStyle(fontSize: _nodeFont, height: 1.2)),
         textDirection: TextDirection.ltr,
       )..layout();
       n.w = tp.width + 24;
@@ -536,7 +559,34 @@ class _GraphScreenState extends State<GraphScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Node Graph'),
+        bottom: highlighted == null
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(44),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: InputChip(
+                      avatar: const Icon(Icons.highlight, size: 18),
+                      label: Text('Highlighting $highlighted'),
+                      onDeleted: () => context.read<TopicProvider>().setHighlight(null),
+                      deleteButtonTooltipMessage: 'Clear highlight',
+                    ),
+                  ),
+                ),
+              ),
         actions: [
+          IconButton(
+            onPressed: () => setState(() => _showLabels = !_showLabels),
+            icon: Icon(_showLabels ? Icons.label : Icons.label_off_outlined),
+            tooltip: _showLabels ? 'Hide topic names' : 'Show topic names',
+          ),
+          IconButton(
+            onPressed: _lNodes.isEmpty ? null : () => setState(() => _needFit = true),
+            icon: const Icon(Icons.fit_screen),
+            tooltip: 'Fit to screen',
+          ),
           IconButton(
             onPressed: _loading ? null : _loadGraph,
             icon: _loading
@@ -582,11 +632,12 @@ class _GraphScreenState extends State<GraphScreen> {
     return LayoutBuilder(builder: (context, constraints) {
       if (_needFit && _graphSize.width > 0) {
         _needFit = false;
-        final sx = constraints.maxWidth / _graphSize.width;
+        // Fit the height; wider graphs are panned sideways
         final sy = constraints.maxHeight / _graphSize.height;
-        final scale = min(sx, sy).clamp(0.05, 1.0);
-        final dx = (constraints.maxWidth - _graphSize.width * scale) / 2;
-        final dy = (constraints.maxHeight - _graphSize.height * scale) / 2;
+        final scale = sy.clamp(_minFitScale, 1.0);
+        // Center when it fits; otherwise start at the left (sources) edge
+        final dx = max(0.0, (constraints.maxWidth - _graphSize.width * scale) / 2);
+        final dy = max(0.0, (constraints.maxHeight - _graphSize.height * scale) / 2);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           _tc.value = Matrix4.identity()
@@ -607,6 +658,7 @@ class _GraphScreenState extends State<GraphScreen> {
             child: CustomPaint(
               size: _graphSize,
               painter: _GraphPainter(
+                showLabels: _showLabels,
                 nodes: _lNodes,
                 edges: _lEdges,
                 highlighted: highlighted,
@@ -626,58 +678,68 @@ class _GraphScreenState extends State<GraphScreen> {
         (r) => r.name == n.name,
         orElse: () => RosNode(name: n.name, publishers: [], subscribers: []),
       );
-      final topicNames = {...rosNode.publishers, ...rosNode.subscribers}.toList();
-      if (topicNames.isEmpty) return;
-      if (topicNames.length == 1) {
-        _openTopic(topicNames.first);
-      } else {
-        _showTopicPicker(topicNames);
-      }
+      _showNode(rosNode);
       return;
     }
   }
 
-  void _openTopic(String name) {
-    final topic = _rosTopics.firstWhere(
-      (t) => t.name == name,
-      orElse: () => RosTopic(name: name, type: 'unknown'),
-    );
-    showModalBottomSheet(
-      context: context,
-      builder: (_) => TopicActionBottomSheet(topic: topic),
-    );
-  }
+  RosTopic _topic(String name) => _rosTopics.firstWhere(
+        (t) => t.name == name,
+        orElse: () => RosTopic(name: name, type: 'unknown'),
+      );
 
-  void _showTopicPicker(List<String> names) {
+  /// What a node publishes and subscribes to; tap a topic to echo it.
+  void _showNode(RosNode node) {
     showModalBottomSheet(
       context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
       builder: (ctx) {
         final cs = Theme.of(ctx).colorScheme;
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child:
-                    Text('Select topic', style: Theme.of(ctx).textTheme.titleMedium),
-              ),
-              const Divider(height: 1),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: names.length,
-                  itemBuilder: (_, i) => ListTile(
-                    title: Text(names[i],
-                        style: TextStyle(fontSize: 13, color: cs.onSurface)),
+        Widget section(String title, IconData icon, List<String> names) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Text('$title (${names.length})',
+                      style: Theme.of(ctx).textTheme.titleSmall?.copyWith(color: cs.primary)),
+                ),
+                if (names.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+                    child: Text('None'),
+                  ),
+                for (final name in (names..sort()))
+                  ListTile(
+                    dense: true,
+                    leading: Icon(icon, size: 20),
+                    title: Text(name),
+                    subtitle: Text(_topic(name).type),
+                    trailing: const Icon(Icons.chevron_right),
                     onTap: () {
                       Navigator.pop(ctx);
-                      _openTopic(names[i]);
+                      openEcho(context, _topic(name));
                     },
                   ),
+              ],
+            );
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.memory),
+                  title: Text(node.name, style: Theme.of(ctx).textTheme.titleMedium),
+                  subtitle: const Text('Node'),
                 ),
-              ),
-            ],
+                const Divider(height: 1),
+                section('Publishes', Icons.upload, List.of(node.publishers)),
+                section('Subscribes', Icons.download, List.of(node.subscribers)),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         );
       },
@@ -693,17 +755,26 @@ class _GraphPainter extends CustomPainter {
   final String? highlighted;
   final ColorScheme colorScheme;
 
+  /// Topic names on every edge; otherwise only on highlighted edges.
+  final bool showLabels;
+
   const _GraphPainter({
     required this.nodes,
     required this.edges,
     required this.highlighted,
     required this.colorScheme,
+    required this.showLabels,
   });
+
+  bool _isHl(_LEdge e) => highlighted != null && e.topics.contains(highlighted);
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Draw edges first (behind nodes)
-    for (final e in edges) {
+    // Draw edges first (behind nodes), highlighted ones last so they stay on top
+    for (final e in edges.where((e) => !_isHl(e))) {
+      _paintEdge(canvas, e);
+    }
+    for (final e in edges.where(_isHl)) {
       _paintEdge(canvas, e);
     }
     // Draw nodes on top
@@ -713,10 +784,11 @@ class _GraphPainter extends CustomPainter {
   }
 
   void _paintEdge(Canvas canvas, _LEdge e) {
-    final edgeColor = colorScheme.outline.withValues(alpha: 0.65);
+    final hl = _isHl(e);
+    final edgeColor = hl ? colorScheme.error : colorScheme.outline.withValues(alpha: 0.65);
     final linePaint = Paint()
       ..color = edgeColor
-      ..strokeWidth = 1.4
+      ..strokeWidth = hl ? 2.6 : 1.4
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
@@ -735,12 +807,14 @@ class _GraphPainter extends CustomPainter {
       ..close();
     canvas.drawPath(arrowPath, Paint()..color = edgeColor);
 
+    if (!showLabels && !hl) return;
+
     // Topic label
-    final label = e.topics.join('\n');
+    final label = hl && !showLabels ? highlighted! : e.topics.join('\n');
     final lp = TextPainter(
       text: TextSpan(
         text: label,
-        style: TextStyle(color: colorScheme.secondary, fontSize: 9, height: 1.3),
+        style: TextStyle(color: colorScheme.secondary, fontSize: 11, height: 1.3),
       ),
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
@@ -784,7 +858,7 @@ class _GraphPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
           text: n.name,
-          style: TextStyle(color: fg, fontSize: 11, height: 1.2)),
+          style: TextStyle(color: fg, fontSize: _nodeFont, height: 1.2)),
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: n.w - 6);
 
@@ -799,5 +873,6 @@ class _GraphPainter extends CustomPainter {
       !identical(old.nodes, nodes) ||
       !identical(old.edges, edges) ||
       old.highlighted != highlighted ||
+      old.showLabels != showLabels ||
       old.colorScheme != colorScheme;
 }

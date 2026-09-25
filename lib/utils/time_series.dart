@@ -113,6 +113,12 @@ String fmtNum(double v, {int sig = 4}) {
   return s == '-0' ? '0' : s;
 }
 
+/// Fixed-decimals formatting that never prints "-0.0".
+String fmtFixed(double v, int digits) {
+  final s = v.toStringAsFixed(digits);
+  return RegExp(r'^-0(\.0*)?$').hasMatch(s) ? s.substring(1) : s;
+}
+
 /// Tick label for an axis whose ticks are [step] apart.
 String fmtTick(double v, double step) {
   if (v.abs() < step * 1e-6) return '0';

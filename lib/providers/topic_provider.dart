@@ -11,24 +11,54 @@ class TopicProvider extends ChangeNotifier {
   List<RosTopic> _topics = [];
   String _searchQuery = '';
   final Set<String> _typeFilters = {};
+  bool _hideSystem = true;
   String? _highlightedTopic;
+  int _graphFocusRequest = 0;
   bool _isLoading = false;
   String? _error;
 
   ConnectionStatus? _status;
   Timer? _refreshTimer;
 
+  /// All topics, sorted by name.
   List<RosTopic> get topics => _topics;
   String get searchQuery => _searchQuery;
   Set<String> get typeFilters => Set.unmodifiable(_typeFilters);
+  bool get hideSystem => _hideSystem;
   String? get highlightedTopic => _highlightedTopic;
+  /// Increments whenever something asks the Graph tab to be shown.
+  int get graphFocusRequest => _graphFocusRequest;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  /// Infrastructure topics every ROS2 system has; rarely what you look for.
+  static bool isSystemTopic(RosTopic t) =>
+      t.name == '/rosout' ||
+      t.name == '/rosout_agg' ||
+      t.name == '/parameter_events' ||
+      t.name.endsWith('/transition_event') ||
+      t.type.startsWith('rcl_interfaces/');
+
+  List<RosTopic> get _visible =>
+      _hideSystem ? _topics.where((t) => !isSystemTopic(t)).toList() : _topics;
+
+  int get hiddenCount => _hideSystem ? _topics.where(isSystemTopic).length : 0;
+
+  /// Topic count per message family, before the family filter is applied.
+  Map<String, int> get familyCounts {
+    final counts = <String, int>{};
+    for (final t in _visible) {
+      counts[t.msgFamily] = (counts[t.msgFamily] ?? 0) + 1;
+    }
+    return counts;
+  }
+
   List<RosTopic> get filteredTopics {
-    return _topics.where((t) {
-      final matchesSearch = _searchQuery.isEmpty ||
-          t.name.toLowerCase().contains(_searchQuery.toLowerCase());
+    final q = _searchQuery.toLowerCase();
+    return _visible.where((t) {
+      final matchesSearch = q.isEmpty ||
+          t.name.toLowerCase().contains(q) ||
+          t.type.toLowerCase().contains(q);
       final matchesFilter =
           _typeFilters.isEmpty || _typeFilters.contains(t.msgFamily);
       return matchesSearch && matchesFilter;
@@ -50,6 +80,7 @@ class TopicProvider extends ChangeNotifier {
       if (status != ConnectionStatus.connecting) {
         _topics = [];
         _error = null;
+        _highlightedTopic = null;
         notifyListeners();
       }
     }
@@ -82,6 +113,7 @@ class TopicProvider extends ChangeNotifier {
           type: i < result.types.length ? result.types[i] : 'unknown',
         ));
       }
+      topics.sort((a, b) => a.name.compareTo(b.name));
       _topics = topics;
     } catch (e) {
       _error = e.toString();
@@ -110,8 +142,20 @@ class TopicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setHideSystem(bool hide) {
+    _hideSystem = hide;
+    notifyListeners();
+  }
+
   void setHighlight(String? topicName) {
     _highlightedTopic = topicName;
+    notifyListeners();
+  }
+
+  /// Highlight [topicName] and switch the main screen to the Graph tab.
+  void showInGraph(String topicName) {
+    _highlightedTopic = topicName;
+    _graphFocusRequest++;
     notifyListeners();
   }
 

@@ -16,7 +16,15 @@ class _V3 {
   double dot(_V3 v) => x * v.x + y * v.y + z * v.z;
   double get len => math.sqrt(x * x + y * y + z * z);
   _V3 get norm { final l = len; return l > 0 ? _V3(x/l, y/l, z/l) : this; }
+  _V3 cross(_V3 v) => _V3(y * v.z - z * v.y, z * v.x - x * v.z, x * v.y - y * v.x);
 }
+
+/// ROS models are Z-up (REP 103); the view is Y-up with Z toward the viewer.
+_V3 _zUp(double x, double y, double z) => _V3(x, z, -y);
+
+/// Above this many faces, back faces are culled for speed (needs the file's
+/// triangles to be wound consistently, which large exported meshes are).
+const _cullAbove = 20000;
 
 // ─── STL 뷰어 위젯 ────────────────────────────────────────────────────────
 
@@ -171,7 +179,7 @@ class _StlPainter extends CustomPainter {
   final Offset pan;
 
   static const _lightDir = _V3(0.4, 0.7, 0.6);
-  static const _baseColor = Color(0xFFA0A0A0);
+  static const _baseColor = Color(0xFF90A4AE);
   static const _fov = 600.0;
   static const _camZ = 4.0;
 
@@ -221,15 +229,17 @@ class _StlPainter extends CustomPainter {
       double avgZ,
     })>[];
 
+    final cull = result.faces.length > _cullAbove;
     for (final f in result.faces) {
-      // 모델 중앙 정렬 + 정규화
-      final r0 = _rotate(_V3((f.x0 - cx) * modelScale, (f.y0 - cy) * modelScale, (f.z0 - cz) * modelScale));
-      final r1 = _rotate(_V3((f.x1 - cx) * modelScale, (f.y1 - cy) * modelScale, (f.z1 - cz) * modelScale));
-      final r2 = _rotate(_V3((f.x2 - cx) * modelScale, (f.y2 - cy) * modelScale, (f.z2 - cz) * modelScale));
-      final rn = _rotate(_V3(f.nx, f.ny, f.nz)).norm;
+      // 모델 중앙 정렬 + 정규화 (Z-up → 화면 Y-up)
+      final r0 = _rotate(_zUp((f.x0 - cx) * modelScale, (f.y0 - cy) * modelScale, (f.z0 - cz) * modelScale));
+      final r1 = _rotate(_zUp((f.x1 - cx) * modelScale, (f.y1 - cy) * modelScale, (f.z1 - cz) * modelScale));
+      final r2 = _rotate(_zUp((f.x2 - cx) * modelScale, (f.y2 - cy) * modelScale, (f.z2 - cz) * modelScale));
+      // Normals from the vertices: many exporters write 0 0 0 in the file
+      final rn = (r1 - r0).cross(r2 - r0).norm;
 
       // 뒷면 컬링: 법선의 Z 성분이 양수면 카메라를 향하지 않음
-      if (rn.z > 0.05) continue;
+      if (cull && rn.z > 0.05) continue;
 
       final avgZ = (r0.z + r1.z + r2.z) / 3;
       transformed.add((v0: r0, v1: r1, v2: r2, normal: rn, avgZ: avgZ));
@@ -246,7 +256,8 @@ class _StlPainter extends CustomPainter {
       final p2 = _project(t.v2, size);
 
       // 플랫 셰이딩: 법선과 광원의 내적
-      final intensity = (-t.normal.dot(_lightDir)).clamp(0.0, 1.0);
+      // Two-sided lighting: winding (and so normal sign) varies between files
+      final intensity = t.normal.dot(_lightDir).abs().clamp(0.0, 1.0);
       final ambient = 0.25;
       final brightness = ambient + (1 - ambient) * intensity;
 
@@ -277,9 +288,9 @@ class _StlPainter extends CustomPainter {
     const origin = _V3(0, 0, 0);
     const len = 0.6;
     final ox = _project(_rotate(origin), size);
-    final xx = _project(_rotate(const _V3(len, 0, 0)), size);
-    final yx = _project(_rotate(const _V3(0, len, 0)), size);
-    final zx = _project(_rotate(const _V3(0, 0, len)), size);
+    final xx = _project(_rotate(_zUp(len, 0, 0)), size);
+    final yx = _project(_rotate(_zUp(0, len, 0)), size);
+    final zx = _project(_rotate(_zUp(0, 0, len)), size);
 
     // 우상단 고정 앵커, 델타를 축소해 영역에 맞춤
     final anchorX = size.width - axisAreaSize / 2;

@@ -2,23 +2,47 @@
 // Needs the mock server (tool/e2e/mock_rosbridge.py) and the web build running.
 // Usage: node tool/e2e/scenarios.js [scenarioName ...]
 const { execSync } = require('child_process');
-const { launch, wait, labels, connect } = require('./lib');
+const fs = require('fs');
+const { launch, wait, labels, connect, openEcho, openActions } = require('./lib');
 
 const mockPid = () => Number(process.env.MOCK_PID ||
   execSync("pgrep -o -f 'python3 .*mock_rosbridge.py'").toString().trim());
 const signalMock = sig => process.kill(mockPid(), sig);
-
-async function openEcho(page, topic) {
-  await page.getByText(topic).first().click();
-  await wait(page, 700);
-  const echo = page.getByText('Topic Echo');
-  if (await echo.count()) await echo.first().click();   // older UI: action sheet first
-  await wait(page, 3000);
-}
+const MOCK_LOG = process.env.MOCK_LOG || 'mock.log';
+/** Mock-server log lines appended after [fromLine]. */
+const mockOps = fromLine => fs.readFileSync(MOCK_LOG, 'utf8').trim().split('\n')
+  .slice(fromLine).map(l => { try { return JSON.parse(l); } catch { return {}; } });
+const logLength = () => fs.existsSync(MOCK_LOG) ? fs.readFileSync(MOCK_LOG, 'utf8').trim().split('\n').length : 0;
 
 const has = (ls, re) => ls.some(l => re.test(l));
 
 const SCENARIOS = {
+  // Joystick drives /cmd_vel while held and sends zero on release.
+  async joystickPublishesAndStops(page) {
+    if (!fs.existsSync(MOCK_LOG)) throw new Error(`set MOCK_LOG (mock server stdout), tried ${MOCK_LOG}`);
+    await connect(page);
+    await openActions(page, '/cmd_vel');
+    await page.getByRole('button', { name: /^Publish/ }).click();
+    await wait(page, 1500);
+    const start = logLength();
+    // The pad (280 px) sits 16 px above the STOP button, centered horizontally
+    const stop = await page.getByRole('button', { name: /STOP/ }).boundingBox();
+    const cx = stop.x + stop.width / 2, cy = stop.y - 16 - 140;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx, cy - 100, { steps: 5 });
+    await wait(page, 800);
+    await page.mouse.up();
+    await wait(page, 600);
+    const pubs = mockOps(start).filter(o => o.op === 'publish' && o.topic === '/cmd_vel');
+    const moving = pubs.filter(o => o.lin > 0);
+    if (moving.length < 3) throw new Error(`expected forward commands while held, got ${JSON.stringify(pubs.slice(0, 5))}`);
+    const tail = pubs.slice(pubs.lastIndexOf(moving[moving.length - 1]) + 1);
+    if (tail.length < 1 || tail.some(o => o.lin !== 0 || o.ang !== 0)) {
+      throw new Error(`expected only zero commands after release, got ${JSON.stringify(tail)}`);
+    }
+  },
+
   // Disconnect, stay idle past the 30s topic refresh, reconnect.
   async reconnectShowsTopics(page) {
     await connect(page);

@@ -51,7 +51,7 @@ class _JointStateWidgetState extends MsgVizState<JointStateWidget> {
 
   String _angle(double? rad) {
     if (rad == null) return '—';
-    return _degrees ? '${radToDeg(rad).toStringAsFixed(1)}°' : fmtNum(rad);
+    return _degrees ? '${fmtFixed(radToDeg(rad), 1)}°' : fmtNum(rad);
   }
 
   @override
@@ -124,7 +124,7 @@ class _JointStateWidgetState extends MsgVizState<JointStateWidget> {
     final selected = j.name == _selected;
     final span = j.hi - j.lo;
     final frac = (j.pos == null || span <= 1e-9) ? null : (j.pos! - j.lo) / span;
-    final vel = j.vel == null ? '—' : _degrees ? radToDeg(j.vel!).toStringAsFixed(1) : fmtNum(j.vel!);
+    final vel = j.vel == null ? '—' : _degrees ? fmtFixed(radToDeg(j.vel!), 1) : fmtNum(j.vel!);
 
     return InkWell(
       onTap: () => setState(() => _selected = j.name),

@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/connection_provider.dart';
+import '../services/rosbridge_service.dart';
+import '../utils/ros_msg.dart';
+import '../widgets/teleop_pad.dart';
 
 class PublishScreen extends StatefulWidget {
   final String topic;
@@ -17,7 +20,14 @@ class PublishScreen extends StatefulWidget {
 }
 
 class _PublishScreenState extends State<PublishScreen> {
+  late final RosbridgeService _service;
   late final TextEditingController _controller;
+  late final bool _isTwist =
+      const {'geometry_msgs/Twist', 'geometry_msgs/TwistStamped'}.contains(baseType(widget.type));
+  late bool _joystick = _isTwist;
+
+  String _template = '{}';
+  bool _edited = false;
   bool _isValid = true;
   String? _errorText;
   bool _isRepeating = false;
@@ -25,13 +35,17 @@ class _PublishScreenState extends State<PublishScreen> {
   Timer? _timer;
   int _sentCount = 0;
 
-  static const List<int> _intervals = [100, 500, 1000];
+  static const List<int> _intervals = [100, 200, 500, 1000];
+  static const _encoder = JsonEncoder.withIndent('  ');
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: _defaultTemplate(widget.type));
+    _service = context.read<ConnectionProvider>().service;
+    _template = _fallbackTemplate(widget.type);
+    _controller = TextEditingController(text: _template);
     _controller.addListener(_validate);
+    _loadTemplate();
   }
 
   @override
@@ -41,45 +55,64 @@ class _PublishScreenState extends State<PublishScreen> {
     super.dispose();
   }
 
-  // ─── 타입별 기본 JSON 템플릿 ──────────────────────────────────────────────
+  // ─── Templates ────────────────────────────────────────────────────────────
 
-  String _defaultTemplate(String type) {
-    if (type.contains('Twist')) {
-      return '{\n'
-          '  "linear":  {"x": 0.0, "y": 0.0, "z": 0.0},\n'
-          '  "angular": {"x": 0.0, "y": 0.0, "z": 0.0}\n'
-          '}';
+  /// Ask rosapi for the message definition; keeps the user's edits.
+  Future<void> _loadTemplate() async {
+    try {
+      final t = await _service.getMessageTemplate(widget.type);
+      if (t == null || !mounted) return;
+      _template = _encoder.convert(t);
+      if (!_edited) {
+        _controller.text = _template;
+        _edited = false;
+      }
+    } catch (_) {
+      // rosapi unavailable: keep the built-in template
     }
-    if (type.contains('Vector3')) {
-      return '{"x": 0.0, "y": 0.0, "z": 0.0}';
-    }
-    if (type.contains('Point')) {
-      return '{"x": 0.0, "y": 0.0, "z": 0.0}';
-    }
-    if (type.contains('Pose')) {
-      return '{\n'
-          '  "position":    {"x": 0.0, "y": 0.0, "z": 0.0},\n'
-          '  "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}\n'
-          '}';
-    }
-    if (type.contains('std_msgs') || type.contains('std_msgs/msg')) {
-      if (type.contains('String')) return '{"data": ""}';
-      if (type.contains('Bool'))   return '{"data": false}';
-      if (type.contains('Float')) return '{"data": 0.0}';
-      return '{"data": 0}';
-    }
-    return '{}';
   }
 
-  // ─── JSON 유효성 검사 ─────────────────────────────────────────────────────
+  String _fallbackTemplate(String type) {
+    final t = baseType(type);
+    const vec = {'x': 0.0, 'y': 0.0, 'z': 0.0};
+    final Object msg = switch (t) {
+      'geometry_msgs/Twist' => {'linear': vec, 'angular': vec},
+      'geometry_msgs/TwistStamped' => {
+          'header': {'frame_id': 'base_link'},
+          'twist': {'linear': vec, 'angular': vec},
+        },
+      'geometry_msgs/Vector3' || 'geometry_msgs/Point' => vec,
+      'geometry_msgs/Pose' => {
+          'position': vec,
+          'orientation': {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0},
+        },
+      'geometry_msgs/PoseStamped' => {
+          'header': {'frame_id': 'map'},
+          'pose': {
+            'position': vec,
+            'orientation': {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0},
+          },
+        },
+      'std_msgs/String' => {'data': ''},
+      'std_msgs/Bool' => {'data': false},
+      _ when t.startsWith('std_msgs/Float') => {'data': 0.0},
+      _ when t.startsWith('std_msgs/') && !t.contains('Array') => {'data': 0},
+      _ => <String, dynamic>{},
+    };
+    return _encoder.convert(msg);
+  }
+
+  // ─── JSON editing ─────────────────────────────────────────────────────────
 
   void _validate() {
+    if (_controller.text != _template) _edited = true;
     try {
-      jsonDecode(_controller.text);
-      if (_isValid && _errorText == null) return; // 이미 유효 상태면 setState 생략
+      final v = jsonDecode(_controller.text);
+      final err = v is Map ? null : 'The message must be a JSON object: { ... }';
+      if (_isValid == (err == null) && _errorText == err) return;
       setState(() {
-        _isValid = true;
-        _errorText = null;
+        _isValid = err == null;
+        _errorText = err;
       });
     } on FormatException catch (e) {
       setState(() {
@@ -89,26 +122,36 @@ class _PublishScreenState extends State<PublishScreen> {
     }
   }
 
-  // ─── 발행 ─────────────────────────────────────────────────────────────────
+  void _format() {
+    try {
+      _controller.text = _encoder.convert(jsonDecode(_controller.text));
+    } on FormatException {
+      // invalid JSON: leave as is, error already shown
+    }
+  }
+
+  void _reset() {
+    _controller.text = _template;
+    _edited = false;
+  }
+
+  // ─── Publishing ───────────────────────────────────────────────────────────
+
+  bool _publish(Map<String, dynamic> msg) {
+    final ok = _service.publish(widget.topic, widget.type, msg);
+    if (ok && mounted) setState(() => _sentCount++);
+    return ok;
+  }
 
   /// Publishes the editor content once. Returns false (and stops repeating)
   /// if the message could not be sent.
   bool _send({bool fromRepeat = false}) {
     if (!_isValid) return false;
-    final decoded = jsonDecode(_controller.text);
-    if (decoded is! Map<String, dynamic>) {
-      _fail('The message must be a JSON object: { ... }');
-      return false;
-    }
-    final ok = context
-        .read<ConnectionProvider>()
-        .service
-        .publish(widget.topic, widget.type, decoded);
-    if (!ok) {
+    final decoded = jsonDecode(_controller.text) as Map<String, dynamic>;
+    if (!_publish(decoded)) {
       _fail('Not connected — message was not sent');
       return false;
     }
-    setState(() => _sentCount++);
     if (!fromRepeat) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -118,6 +161,29 @@ class _PublishScreenState extends State<PublishScreen> {
         ));
     }
     return true;
+  }
+
+  /// Used by the joystick; must not touch [context] (it can run after the
+  /// screen is closed to send the final stop).
+  bool _sendTwist(double linear, double angular) {
+    final twist = {
+      'linear': {'x': linear, 'y': 0.0, 'z': 0.0},
+      'angular': {'x': 0.0, 'y': 0.0, 'z': angular},
+    };
+    final Map<String, dynamic> msg;
+    if (baseType(widget.type) == 'geometry_msgs/TwistStamped') {
+      final now = DateTime.now().microsecondsSinceEpoch;
+      msg = {
+        'header': {
+          'stamp': {'sec': now ~/ 1000000, 'nanosec': (now % 1000000) * 1000},
+          'frame_id': 'base_link',
+        },
+        'twist': twist,
+      };
+    } else {
+      msg = twist;
+    }
+    return _publish(msg);
   }
 
   void _fail(String message) {
@@ -146,7 +212,6 @@ class _PublishScreenState extends State<PublishScreen> {
     if (val == null) return;
     setState(() => _intervalMs = val);
     if (_isRepeating) {
-      // 인터벌 변경 시 타이머 재시작
       _toggleRepeat(false);
       _toggleRepeat(true);
     }
@@ -157,125 +222,139 @@ class _PublishScreenState extends State<PublishScreen> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Publish', style: TextStyle(fontSize: 16)),
-            Text(
-              widget.topic,
-              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-              overflow: TextOverflow.ellipsis,
-            ),
+            Text('Publish ${widget.topic}', overflow: TextOverflow.ellipsis),
+            Text(widget.type,
+                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                overflow: TextOverflow.ellipsis),
           ],
         ),
-      ),
-      body: Column(
-        children: [
-          // 타입 칩
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Chip(
-                avatar: const Icon(Icons.label_outline, size: 16),
-                label: Text(widget.type, style: const TextStyle(fontSize: 11)),
-                padding: EdgeInsets.zero,
-              ),
+        actions: [
+          if (_sentCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Center(child: Text('$_sentCount sent', style: TextStyle(color: cs.onSurfaceVariant))),
             ),
-          ),
-
-          // JSON 에디터
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: TextField(
-                controller: _controller,
-                maxLines: null,
-                expands: true,
-                textAlignVertical: TextAlignVertical.top,
-                keyboardType: TextInputType.multiline,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                decoration: InputDecoration(
-                  labelText: 'Message (JSON)',
-                  alignLabelWithHint: true,
-                  border: const OutlineInputBorder(),
-                  errorText: _errorText,
-                  errorMaxLines: 3,
-                ),
-              ),
-            ),
-          ),
-
-          // 반복 발행 토글
-          SwitchListTile(
-            title: const Text('Repeat Publish'),
-            subtitle: Text(
-              _isRepeating
-                  ? 'Publishing every $_intervalMs ms · $_sentCount sent'
-                  : 'Send repeatedly on interval',
-            ),
-            secondary: Icon(
-              _isRepeating ? Icons.pause_circle : Icons.repeat,
-              color: _isRepeating ? cs.primary : null,
-            ),
-            value: _isRepeating,
-            onChanged: _isValid ? _toggleRepeat : null,
-          ),
-
-          // 인터벌 선택 (반복 중일 때만 표시)
-          AnimatedSize(
-            duration: const Duration(milliseconds: 200),
-            child: _isRepeating
-                ? Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Interval',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<int>(
-                          value: _intervalMs,
-                          isDense: true,
-                          isExpanded: true,
-                          items: _intervals
-                              .map((ms) => DropdownMenuItem(
-                                    value: ms,
-                                    child: Text('$ms ms'),
-                                  ))
-                              .toList(),
-                          onChanged: _onIntervalChanged,
-                        ),
-                      ),
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
-
-          // Publish Once 버튼
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _isValid ? () => _send() : null,
-                  icon: const Icon(Icons.send),
-                  label: Text(_sentCount == 0
-                      ? 'Publish Once'
-                      : 'Publish Once  ($_sentCount sent)'),
-                ),
-              ),
-            ),
-          ),
         ],
+        bottom: !_isTwist
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(52),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: true, label: Text('Joystick'), icon: Icon(Icons.gamepad)),
+                      ButtonSegment(value: false, label: Text('JSON'), icon: Icon(Icons.data_object)),
+                    ],
+                    selected: {_joystick},
+                    onSelectionChanged: (s) {
+                      if (_isRepeating) _toggleRepeat(false);
+                      setState(() => _joystick = s.first);
+                    },
+                  ),
+                ),
+              ),
       ),
+      body: _joystick
+          ? SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: TeleopPad(send: _sendTwist),
+            )
+          : _jsonEditor(cs),
+    );
+  }
+
+  Widget _jsonEditor(ColorScheme cs) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+          child: Row(
+            children: [
+              TextButton.icon(
+                onPressed: _reset,
+                icon: const Icon(Icons.restart_alt, size: 18),
+                label: const Text('Template'),
+              ),
+              TextButton.icon(
+                onPressed: _isValid ? _format : null,
+                icon: const Icon(Icons.format_align_left, size: 18),
+                label: const Text('Format'),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: TextField(
+              controller: _controller,
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              keyboardType: TextInputType.multiline,
+              autocorrect: false,
+              enableSuggestions: false,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+              decoration: InputDecoration(
+                labelText: 'Message (JSON)',
+                alignLabelWithHint: true,
+                border: const OutlineInputBorder(),
+                errorText: _errorText,
+                errorMaxLines: 3,
+              ),
+            ),
+          ),
+        ),
+        SwitchListTile(
+          title: const Text('Repeat'),
+          subtitle: Text(_isRepeating
+              ? 'Publishing every $_intervalMs ms'
+              : 'Publish continuously at an interval'),
+          secondary: Icon(
+            _isRepeating ? Icons.pause_circle : Icons.repeat,
+            color: _isRepeating ? cs.primary : null,
+          ),
+          value: _isRepeating,
+          onChanged: _isValid ? _toggleRepeat : null,
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          child: _isRepeating
+              ? Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: SegmentedButton<int>(
+                    segments: [
+                      for (final ms in _intervals)
+                        ButtonSegment(value: ms, label: Text('${1000 ~/ ms} Hz')),
+                    ],
+                    selected: {_intervalMs},
+                    onSelectionChanged: (s) => _onIntervalChanged(s.first),
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: _isValid ? () => _send() : null,
+                icon: const Icon(Icons.send),
+                label: const Text('Publish once'),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

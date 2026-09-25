@@ -73,7 +73,7 @@ class _TwistWidgetState extends MsgVizState<TwistWidget> {
                   const SizedBox(height: 8),
                   StatTile(
                     label: 'Turn (${_a[2] > 0 ? 'left' : _a[2] < 0 ? 'right' : '—'})',
-                    value: radToDeg(_a[2]).toStringAsFixed(1),
+                    value: fmtFixed(radToDeg(_a[2]), 1),
                     unit: '°/s',
                     color: AxisColors.z,
                   ),

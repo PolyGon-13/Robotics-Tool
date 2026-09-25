@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -53,7 +54,7 @@ class _ModelViewerScreenState extends State<ModelViewerScreen> {
         });
       } else if (ext == 'urdf') {
         try {
-          final text = String.fromCharCodes(bytes);
+          final text = utf8.decode(bytes, allowMalformed: true);
           final robot = UrdfParserService.parse(text);
           setState(() {
             _fileBytes = bytes;

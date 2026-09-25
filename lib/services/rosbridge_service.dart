@@ -4,6 +4,8 @@ import 'dart:math';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../utils/msg_template.dart';
+
 enum ConnectionStatus { disconnected, connecting, connected, failed }
 
 typedef OnStatusChange = void Function(ConnectionStatus status);
@@ -256,6 +258,16 @@ class RosbridgeService {
     );
     final subs = result['subscribers'] as List<dynamic>? ?? [];
     return subs.cast<String>();
+  }
+
+  /// Default-valued message for [type], built from rosapi's type
+  /// definitions. Null if rosapi does not know the type.
+  Future<Map<String, dynamic>?> getMessageTemplate(String type) async {
+    final result = await callService(
+      '/rosapi/message_details',
+      args: {'type': type},
+    );
+    return templateFromTypedefs(type, result['typedefs'] as List<dynamic>? ?? []);
   }
 
   // ─── Publish ───────────────────────────────────────────────────────────────

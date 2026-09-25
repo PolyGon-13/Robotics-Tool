@@ -110,7 +110,7 @@ class _TfWidgetState extends MsgVizState<TfWidget> {
                 if (f != null)
                   Text(
                     'x ${fmtNum(f.x, sig: 3)}  y ${fmtNum(f.y, sig: 3)}  z ${fmtNum(f.z, sig: 3)} m'
-                    '  ·  yaw ${radToDeg(f.yaw).toStringAsFixed(1)}°',
+                    '  ·  yaw ${fmtFixed(radToDeg(f.yaw), 1)}°',
                     style: TextStyle(
                         fontSize: 12,
                         color: cs.onSurfaceVariant,

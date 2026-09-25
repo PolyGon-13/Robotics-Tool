@@ -74,6 +74,29 @@ SUBS = {
 }
 NODES = sorted({n for d in (PUBS, SUBS) for v in d.values() for n in v})
 
+# rosapi/message_details typedefs (subset)
+def _td(t, fields):
+    return {"type": t, "fieldnames": [f[0] for f in fields], "fieldtypes": [f[1] for f in fields],
+            "fieldarraylen": [f[2] if len(f) > 2 else -1 for f in fields], "examples": [],
+            "constnames": [], "constvalues": []}
+TYPEDEFS = {
+    "geometry_msgs/Vector3": _td("geometry_msgs/Vector3", [("x", "float64"), ("y", "float64"), ("z", "float64")]),
+    "geometry_msgs/Point": _td("geometry_msgs/Point", [("x", "float64"), ("y", "float64"), ("z", "float64")]),
+    "geometry_msgs/Quaternion": _td("geometry_msgs/Quaternion", [("x", "float64"), ("y", "float64"), ("z", "float64"), ("w", "float64")]),
+    "geometry_msgs/Twist": _td("geometry_msgs/Twist", [("linear", "geometry_msgs/Vector3"), ("angular", "geometry_msgs/Vector3")]),
+    "geometry_msgs/Pose": _td("geometry_msgs/Pose", [("position", "geometry_msgs/Point"), ("orientation", "geometry_msgs/Quaternion")]),
+    "geometry_msgs/PoseStamped": _td("geometry_msgs/PoseStamped", [("header", "std_msgs/Header"), ("pose", "geometry_msgs/Pose")]),
+    "std_msgs/Header": _td("std_msgs/Header", [("stamp", "builtin_interfaces/Time"), ("frame_id", "string")]),
+    "builtin_interfaces/Time": _td("builtin_interfaces/Time", [("sec", "int32"), ("nanosec", "uint32")]),
+    "std_msgs/String": _td("std_msgs/String", [("data", "string")]),
+    "std_msgs/Bool": _td("std_msgs/Bool", [("data", "bool")]),
+    "std_msgs/Float32": _td("std_msgs/Float32", [("data", "float32")]),
+}
+DEPS = {"geometry_msgs/Twist": ["geometry_msgs/Vector3"],
+        "geometry_msgs/Pose": ["geometry_msgs/Point", "geometry_msgs/Quaternion"],
+        "geometry_msgs/PoseStamped": ["std_msgs/Header", "builtin_interfaces/Time", "geometry_msgs/Pose",
+                                      "geometry_msgs/Point", "geometry_msgs/Quaternion"]}
+
 clients = set()
 paused = False
 T0 = time.time()
@@ -266,7 +289,11 @@ async def handler(ws):
         async for raw in ws:
             m = json.loads(raw)
             op = m.get("op")
-            log(ev="op", cid=cid, op=op, **{k: m[k] for k in ("service", "topic", "type") if k in m})
+            extra = {k: m[k] for k in ("service", "topic", "type") if k in m}
+            if op == "publish":  # summarize velocity commands for the joystick scenario
+                tw = m.get("msg", {}).get("twist", m.get("msg", {}))
+                extra.update(lin=tw.get("linear", {}).get("x"), ang=tw.get("angular", {}).get("z"))
+            log(ev="op", cid=cid, op=op, **extra)
             if op == "call_service":
                 svc, args = m["service"], m.get("args") or {}
                 if svc == "/rosapi/topics":
@@ -277,6 +304,9 @@ async def handler(ws):
                     vals = {"publishers": PUBS.get(args.get("topic"), [])}
                 elif svc == "/rosapi/subscribers":
                     vals = {"subscribers": SUBS.get(args.get("topic"), [])}
+                elif svc == "/rosapi/message_details":
+                    t = args.get("type", "").replace("/msg/", "/")
+                    vals = {"typedefs": [TYPEDEFS[x] for x in [t] + DEPS.get(t, []) if x in TYPEDEFS]}
                 else:
                     vals = {}
                 await ws.send(json.dumps({"op": "service_response", "id": m["id"],

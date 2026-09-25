@@ -86,6 +86,13 @@ void main() {
     });
   });
 
+  test('fmtFixed never shows negative zero', () {
+    expect(fmtFixed(-0.0001, 1), '0.0');
+    expect(fmtFixed(-0.0, 2), '0.00');
+    expect(fmtFixed(-0.06, 1), '-0.1');
+    expect(fmtFixed(12.34, 1), '12.3');
+  });
+
   test('fmtTick uses the precision of the step', () {
     expect(fmtTick(12.25, 0.25), '12.25');
     expect(fmtTick(12.5, 0.5), '12.5');

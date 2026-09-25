@@ -80,15 +80,15 @@ class _PoseWidgetState extends MsgVizState<PoseWidget> {
       if (_theta != null)
         VizCard(
           title: 'Heading',
-          child: StatTile(label: 'theta', value: '${radToDeg(_theta!).toStringAsFixed(1)}°'),
+          child: StatTile(label: 'theta', value: '${fmtFixed(radToDeg(_theta!), 1)}°'),
         ),
       if (_rpy != null)
         VizCard(
           title: 'Orientation',
           child: StatRow([
-            StatTile(label: 'Roll', value: '${radToDeg(_rpy!.roll).toStringAsFixed(1)}°', color: AxisColors.x),
-            StatTile(label: 'Pitch', value: '${radToDeg(_rpy!.pitch).toStringAsFixed(1)}°', color: AxisColors.y),
-            StatTile(label: 'Yaw', value: '${radToDeg(_rpy!.yaw).toStringAsFixed(1)}°', color: AxisColors.z),
+            StatTile(label: 'Roll', value: '${fmtFixed(radToDeg(_rpy!.roll), 1)}°', color: AxisColors.x),
+            StatTile(label: 'Pitch', value: '${fmtFixed(radToDeg(_rpy!.pitch), 1)}°', color: AxisColors.y),
+            StatTile(label: 'Yaw', value: '${fmtFixed(radToDeg(_rpy!.yaw), 1)}°', color: AxisColors.z),
           ]),
         ),
       if (_xyz != null)

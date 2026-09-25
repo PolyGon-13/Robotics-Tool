@@ -15,7 +15,11 @@ class _V3 {
   double dot(_V3 v) => x * v.x + y * v.y + z * v.z;
   double get len => math.sqrt(x * x + y * y + z * z);
   _V3 get norm { final l = len; return l > 0 ? _V3(x/l, y/l, z/l) : this; }
+  _V3 cross(_V3 v) => _V3(y * v.z - z * v.y, z * v.x - x * v.z, x * v.y - y * v.x);
 }
+
+/// ROS models are Z-up (REP 103); the view is Y-up with Z toward the viewer.
+_V3 _zUp(double x, double y, double z) => _V3(x, z, -y);
 
 /// 4×4 행렬 (row-major)
 class _M4 {
@@ -168,8 +172,10 @@ class _UrdfViewerWidgetState extends State<UrdfViewerWidget> {
   // 하이라이트된 링크
   String? _highlighted;
 
-  // 사이드패널 열림 여부
-  bool _showPanel = true;
+  // 사이드패널 열림 여부 (좁은 화면에서는 접어 둠)
+  bool? _showPanelState;
+  bool get _showPanel => _showPanelState ?? MediaQuery.of(context).size.width >= 600;
+  set _showPanel(bool v) => _showPanelState = v;
 
   // 링크 색상 팔레트 (Material 계열)
   static const _palette = [
@@ -461,12 +467,13 @@ class _UrdfViewerWidgetState extends State<UrdfViewerWidget> {
                               width: 100,
                               child: Text(
                                 j.name,
-                                style: const TextStyle(fontSize: 10),
+                                style: const TextStyle(fontSize: 12),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             Expanded(
                               child: Slider(
+                                inactiveColor: Theme.of(context).colorScheme.outlineVariant,
                                 value: (_jointValues[j.name] ?? 0)
                                     .clamp(j.limitLower, j.limitUpper),
                                 min: j.limitLower,
@@ -476,10 +483,13 @@ class _UrdfViewerWidgetState extends State<UrdfViewerWidget> {
                               ),
                             ),
                             SizedBox(
-                              width: 40,
+                              width: 56,
                               child: Text(
-                                (_jointValues[j.name] ?? 0).toStringAsFixed(2),
-                                style: const TextStyle(fontSize: 10),
+                                j.type == 'prismatic'
+                                    ? '${(_jointValues[j.name] ?? 0).toStringAsFixed(3)} m'
+                                    : '${((_jointValues[j.name] ?? 0) * 180 / math.pi).toStringAsFixed(0)}°',
+                                style: const TextStyle(fontSize: 12),
+                                textAlign: TextAlign.right,
                               ),
                             ),
                           ],
@@ -504,7 +514,7 @@ class _UrdfPainter extends CustomPainter {
 
   static const _lightDir = _V3(0.4, 0.7, 0.6);
   static const _fov = 600.0;
-  static const _camZ = 5.0;
+  static const _camZ = 4.0;
 
   const _UrdfPainter({
     required this.faces,
@@ -547,14 +557,30 @@ class _UrdfPainter extends CustomPainter {
       return;
     }
 
+    // Center the robot and scale it to ~2 units so any robot size fits
+    var lo = const _V3(double.infinity, double.infinity, double.infinity);
+    var hi = const _V3(double.negativeInfinity, double.negativeInfinity, double.negativeInfinity);
+    for (final f in faces) {
+      for (final v in [f.v0, f.v1, f.v2]) {
+        lo = _V3(math.min(lo.x, v.x), math.min(lo.y, v.y), math.min(lo.z, v.z));
+        hi = _V3(math.max(hi.x, v.x), math.max(hi.y, v.y), math.max(hi.z, v.z));
+      }
+    }
+    final center = (lo + hi) * 0.5;
+    final extent = math.max(hi.x - lo.x, math.max(hi.y - lo.y, hi.z - lo.z));
+    final ms = extent > 0 ? 2.0 / extent : 1.0;
+    _V3 place(_V3 v) {
+      final p = (v - center) * ms;
+      return _rotate(_zUp(p.x, p.y, p.z));
+    }
+
     // 변환 + 정렬
     final items = <({_V3 v0, _V3 v1, _V3 v2, _V3 n, double z, Color c})>[];
     for (final f in faces) {
-      final r0 = _rotate(f.v0);
-      final r1 = _rotate(f.v1);
-      final r2 = _rotate(f.v2);
-      final rn = _rotate(f.normal).norm;
-      if (rn.z > 0.1) continue; // 뒷면 컬링
+      final r0 = place(f.v0);
+      final r1 = place(f.v1);
+      final r2 = place(f.v2);
+      final rn = (r1 - r0).cross(r2 - r0).norm;
       items.add((
         v0: r0, v1: r1, v2: r2, n: rn,
         z: (r0.z + r1.z + r2.z) / 3,
@@ -568,7 +594,7 @@ class _UrdfPainter extends CustomPainter {
       final p0 = _project(t.v0, size);
       final p1 = _project(t.v1, size);
       final p2 = _project(t.v2, size);
-      final intensity = (-t.n.dot(_lightDir)).clamp(0.0, 1.0);
+      final intensity = t.n.dot(_lightDir).abs().clamp(0.0, 1.0);
       final b = 0.25 + 0.75 * intensity;
       final c = t.c;
       paint.color = Color.fromARGB(

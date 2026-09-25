@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/connection_provider.dart';
@@ -49,16 +50,6 @@ class SettingsScreen extends StatelessWidget {
             builder: (context, conn, _) => Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.computer),
-                  title: const Text('IP'),
-                  subtitle: Text(conn.connectedIp ?? '-'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.settings_ethernet),
-                  title: const Text('Port'),
-                  subtitle: Text(conn.connectedPort?.toString() ?? '-'),
-                ),
-                ListTile(
                   leading: Icon(
                     Icons.circle,
                     size: 14,
@@ -69,13 +60,15 @@ class SettingsScreen extends StatelessWidget {
                       ConnectionStatus.disconnected => Colors.grey,
                     },
                   ),
-                  title: const Text('Status'),
-                  subtitle: Text(switch (conn.status) {
+                  title: Text(switch (conn.status) {
                     ConnectionStatus.connected    => 'Connected',
-                    ConnectionStatus.connecting   => 'Connecting…',
-                    ConnectionStatus.failed       => 'Connection Failed',
-                    ConnectionStatus.disconnected => 'Disconnected',
+                    ConnectionStatus.connecting   => 'Reconnecting…',
+                    ConnectionStatus.failed       => 'Connection failed',
+                    ConnectionStatus.disconnected => 'Not connected',
                   }),
+                  subtitle: Text(conn.connectedIp != null
+                      ? 'ws://${conn.connectedIp}:${conn.connectedPort}'
+                      : conn.ip.isEmpty ? '-' : 'Last: ${conn.ip}:${conn.port}'),
                 ),
 
                 // ── Disconnect 버튼 ────────────────────────────────────
@@ -113,10 +106,15 @@ class SettingsScreen extends StatelessWidget {
             title: Text('App Name'),
             subtitle: Text('Robotics Tool'),
           ),
-          const ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('Version'),
-            subtitle: Text('1.0.3'),
+          FutureBuilder<PackageInfo>(
+            future: PackageInfo.fromPlatform(),
+            builder: (_, snap) => ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('Version'),
+              subtitle: Text(snap.hasData
+                  ? '${snap.data!.version} (build ${snap.data!.buildNumber})'
+                  : '…'),
+            ),
           ),
           const ListTile(
             leading: Icon(Icons.person_outline),

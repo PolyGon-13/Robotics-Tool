@@ -106,7 +106,7 @@ class _ImuWidgetState extends MsgVizState<ImuWidget> {
   }
 
   Widget _deg(String label, double rad, Color color) => StatTile(
-      label: label, value: '${radToDeg(rad).toStringAsFixed(1)}°', color: color);
+      label: label, value: '${fmtFixed(radToDeg(rad), 1)}°', color: color);
 }
 
 /// Artificial horizon: sky/ground split rotated by roll, shifted by pitch.

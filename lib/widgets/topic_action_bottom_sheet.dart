@@ -1,10 +1,39 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/ros_topic.dart';
 import '../providers/topic_provider.dart';
 import '../screens/publish_screen.dart';
 import '../screens/visualization_screen.dart';
+import 'topic_icon.dart';
+import 'visualizations/visualizer_registry.dart';
+
+void openEcho(BuildContext context, RosTopic topic) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => VisualizationScreen(topic: topic.name, type: topic.type),
+    ),
+  );
+}
+
+void openPublish(BuildContext context, RosTopic topic) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => PublishScreen(topic: topic.name, type: topic.type),
+    ),
+  );
+}
+
+void showTopicActions(BuildContext context, RosTopic topic) {
+  showModalBottomSheet(
+    context: context,
+    showDragHandle: true,
+    builder: (_) => TopicActionBottomSheet(topic: topic),
+  );
+}
 
 class TopicActionBottomSheet extends StatelessWidget {
   final RosTopic topic;
@@ -13,71 +42,55 @@ class TopicActionBottomSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final visual = hasVisualizer(topic.type);
     return SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 헤더: 토픽 이름 + 타입
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(topic.name,
-                    style: Theme.of(context).textTheme.titleMedium),
-                Text(topic.type,
-                    style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
+          ListTile(
+            leading: Icon(topicIcon(topic.type)),
+            title: Text(topic.name, style: Theme.of(context).textTheme.titleMedium),
+            subtitle: Text(topic.type),
           ),
           const Divider(),
-
-          // 📊 Topic Echo
           ListTile(
-            leading: const Icon(Icons.bar_chart),
+            leading: const Icon(Icons.insights),
             title: const Text('Topic Echo'),
+            subtitle: Text(visual ? 'Live visualization' : 'Live message view'),
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => VisualizationScreen(
-                    topic: topic.name,
-                    type: topic.type,
-                  ),
-                ),
-              );
+              openEcho(context, topic);
             },
           ),
-
-          // 📤 Publish
           ListTile(
             leading: const Icon(Icons.upload),
             title: const Text('Publish'),
+            subtitle: const Text('Send messages to this topic'),
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PublishScreen(
-                    topic: topic.name,
-                    type: topic.type,
-                  ),
-                ),
+              openPublish(context, topic);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.account_tree),
+            title: const Text('Show in Graph'),
+            subtitle: const Text('Highlight the nodes using this topic'),
+            onTap: () {
+              context.read<TopicProvider>().showInGraph(topic.name);
+              Navigator.pop(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.copy),
+            title: const Text('Copy topic name'),
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: topic.name));
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Copied ${topic.name}'), duration: const Duration(seconds: 1)),
               );
             },
           ),
-
-          // 🔗 Graph 하이라이트
-          ListTile(
-            leading: const Icon(Icons.account_tree),
-            title: const Text('Highlight in Graph'),
-            onTap: () {
-              context.read<TopicProvider>().setHighlight(topic.name);
-              Navigator.pop(context);
-            },
-          ),
-
           const SizedBox(height: 8),
         ],
       ),
