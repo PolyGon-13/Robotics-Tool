@@ -260,14 +260,16 @@ class RosbridgeService {
 
   // ─── Publish ───────────────────────────────────────────────────────────────
 
-  /// fire-and-forget: rosbridge publish op (응답 없음)
-  void publish(String topic, String type, Map<String, dynamic> message) {
-    if (_channel == null || _status != ConnectionStatus.connected) return;
+  /// fire-and-forget: rosbridge publish op (응답 없음).
+  /// 연결되어 있지 않아 보내지 못하면 false.
+  bool publish(String topic, String type, Map<String, dynamic> message) {
+    if (_channel == null || _status != ConnectionStatus.connected) return false;
     _channel!.sink.add(jsonEncode({
       'op': 'publish',
       'topic': topic,
       'type': type,
       'msg': message,
     }));
+    return true;
   }
 }

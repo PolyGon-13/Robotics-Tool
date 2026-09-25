@@ -26,7 +26,8 @@ class _ScalarChartWidgetState extends State<ScalarChartWidget> {
   @override
   void didUpdateWidget(ScalarChartWidget old) {
     super.didUpdateWidget(old);
-    _addPoint(widget.latestMsg);
+    // Rebuilds also happen without a new message (status refresh)
+    if (!identical(old.latestMsg, widget.latestMsg)) _addPoint(widget.latestMsg);
   }
 
   void _addPoint(Map<String, dynamic> msg) {

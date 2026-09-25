@@ -26,7 +26,8 @@ class _TwistWidgetState extends State<TwistWidget> {
   @override
   void didUpdateWidget(TwistWidget old) {
     super.didUpdateWidget(old);
-    _update(widget.latestMsg);
+    // Rebuilds also happen without a new message (status refresh)
+    if (!identical(old.latestMsg, widget.latestMsg)) _update(widget.latestMsg);
   }
 
   void _update(Map<String, dynamic> msg) {

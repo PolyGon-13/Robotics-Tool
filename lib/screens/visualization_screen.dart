@@ -4,14 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/connection_provider.dart';
+import '../utils/rate_meter.dart';
 import '../widgets/raw_json_tree_widget.dart';
-import '../widgets/settings_button.dart';
-import '../widgets/visualizations/compressed_image_widget.dart';
-import '../widgets/visualizations/image_widget.dart';
-import '../widgets/visualizations/laser_scan_widget.dart';
-import '../widgets/visualizations/odometry_widget.dart';
-import '../widgets/visualizations/scalar_chart_widget.dart';
-import '../widgets/visualizations/twist_widget.dart';
+import '../widgets/visualizations/visualizer_registry.dart';
 
 class VisualizationScreen extends StatefulWidget {
   final String topic;
@@ -29,104 +24,194 @@ class VisualizationScreen extends StatefulWidget {
 
 class _VisualizationScreenState extends State<VisualizationScreen> {
   StreamSubscription? _sub;
+  late final ConnectionProvider _conn;
+  final RateMeter _rate = RateMeter();
+  Timer? _ticker;
+
   Map<String, dynamic>? _latestMsg;
   bool _paused = false;
-  int _msgCount = 0;
-  DateTime? _firstMsgTime;
-  double _hz = 0;
+  late bool _showRaw = !hasVisualizer(widget.type);
+  final DateTime _openedAt = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    _startSubscription();
+    _conn = context.read<ConnectionProvider>();
+    _sub = _conn.service.subscribe(widget.topic, widget.type).listen(_onMsg);
+    // Refresh rate / "no data" status even when no messages arrive.
+    _ticker = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
-  void _startSubscription() {
-    final service = context.read<ConnectionProvider>().service;
-    final stream = service.subscribe(widget.topic, widget.type);
-    _sub = stream.listen((msg) {
-      if (_paused) return;
-      _msgCount++;
-      final now = DateTime.now();
-      _firstMsgTime ??= now;
-      final elapsed = now.difference(_firstMsgTime!).inMilliseconds / 1000.0;
-      if (elapsed > 0) _hz = _msgCount / elapsed;
-      setState(() => _latestMsg = msg);
-    });
+  void _onMsg(Map<String, dynamic> msg) {
+    _rate.tick();
+    if (_paused) return;
+    setState(() => _latestMsg = msg);
   }
 
   @override
   void dispose() {
+    _ticker?.cancel();
     _sub?.cancel();
-    context.read<ConnectionProvider>().service.unsubscribe(widget.topic);
+    _conn.service.unsubscribe(widget.topic);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final canVisualize = hasVisualizer(widget.type);
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.topic, style: const TextStyle(fontSize: 14)),
+            Text(widget.topic,
+                style: const TextStyle(fontSize: 16),
+                overflow: TextOverflow.ellipsis),
             Text(widget.type,
-                style: Theme.of(context).textTheme.bodySmall),
+                style: Theme.of(context).textTheme.bodySmall,
+                overflow: TextOverflow.ellipsis),
           ],
         ),
         actions: [
-          Text('${_hz.toStringAsFixed(1)} Hz',
-              style: const TextStyle(fontSize: 12)),
-          const SizedBox(width: 4),
+          if (canVisualize)
+            IconButton(
+              icon: Icon(_showRaw ? Icons.insights : Icons.data_object),
+              tooltip: _showRaw ? 'Show visualization' : 'Show raw message',
+              onPressed: () => setState(() => _showRaw = !_showRaw),
+            ),
           IconButton(
             icon: Icon(_paused ? Icons.play_arrow : Icons.pause),
+            tooltip: _paused ? 'Resume' : 'Pause',
             onPressed: () => setState(() => _paused = !_paused),
           ),
-          const SettingsButton(),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(30),
+          child: _StatusStrip(
+            rate: _rate,
+            paused: _paused,
+            connected: context.watch<ConnectionProvider>().isConnected,
+            waitingFor: DateTime.now().difference(_openedAt),
+          ),
+        ),
       ),
-      body: _buildVisualization(),
+      body: _buildBody(),
     );
   }
 
-  Widget _buildVisualization() {
-    if (_latestMsg == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final t = widget.type;
-
-    if (t == 'sensor_msgs/LaserScan' || t == 'sensor_msgs/msg/LaserScan') {
-      return LaserScanWidget(msg: _latestMsg!);
-    } else if (t == 'nav_msgs/Odometry' || t == 'nav_msgs/msg/Odometry') {
-      return OdometryWidget(topic: widget.topic, latestMsg: _latestMsg!);
-    } else if (t == 'geometry_msgs/Twist' || t == 'geometry_msgs/msg/Twist') {
-      return TwistWidget(topic: widget.topic, latestMsg: _latestMsg!);
-    } else if (_isScalar(t)) {
-      return ScalarChartWidget(topic: widget.topic, latestMsg: _latestMsg!);
-    } else if (t == 'sensor_msgs/CompressedImage' ||
-               t == 'sensor_msgs/msg/CompressedImage') {
-      return CompressedImageWidget(msg: _latestMsg!);
-    } else if (t == 'sensor_msgs/Image' || t == 'sensor_msgs/msg/Image') {
-      return ImageWidget(msg: _latestMsg!);
-    } else {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(8),
-        child: RawJsonTreeWidget(data: _latestMsg!),
+  Widget _buildBody() {
+    final msg = _latestMsg;
+    if (msg == null) {
+      return _WaitingForData(
+        topic: widget.topic,
+        waited: DateTime.now().difference(_openedAt),
       );
     }
+    if (_showRaw) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(12),
+        child: RawJsonTreeWidget(data: msg),
+      );
+    }
+    return buildVisualizer(widget.type, widget.topic, msg);
+  }
+}
+
+// ─── Status strip ────────────────────────────────────────────────────────────
+
+class _StatusStrip extends StatelessWidget {
+  final RateMeter rate;
+  final bool paused;
+  final bool connected;
+  final Duration waitingFor;
+
+  const _StatusStrip({
+    required this.rate,
+    required this.paused,
+    required this.connected,
+    required this.waitingFor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final now = DateTime.now();
+
+    final (IconData icon, Color color, String text) = switch (true) {
+      _ when !connected => (Icons.link_off, cs.error, 'Disconnected — reconnecting…'),
+      _ when !rate.hasData => (Icons.hourglass_empty, cs.outline,
+          'Waiting for data… ${_secs(waitingFor)}'),
+      _ when rate.isStale(now) => (Icons.warning_amber_rounded, Colors.orange.shade800,
+          'No data for ${_secs(rate.sinceLast(now)!)}'),
+      _ => (Icons.circle, Colors.green.shade600,
+          '${rate.rate(now).toStringAsFixed(1)} Hz'),
+    };
+
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      color: color.withValues(alpha: 0.12),
+      child: Row(
+        children: [
+          Icon(icon, size: icon == Icons.circle ? 10 : 16, color: color),
+          const SizedBox(width: 8),
+          Text(text,
+              style: TextStyle(
+                  color: color, fontWeight: FontWeight.w600, fontSize: 13)),
+          const Spacer(),
+          if (paused) ...[
+            Icon(Icons.pause_circle, size: 16, color: cs.primary),
+            const SizedBox(width: 4),
+            Text('Paused',
+                style: TextStyle(color: cs.primary, fontSize: 13)),
+            const SizedBox(width: 12),
+          ],
+          Text('${rate.count} msgs',
+              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
+        ],
+      ),
+    );
   }
 
-  static bool _isScalar(String type) {
-    const scalars = {
-      'std_msgs/Float64', 'std_msgs/Float32',
-      'std_msgs/Int32',   'std_msgs/Int64',
-      'std_msgs/Int16',   'std_msgs/Int8',
-      'std_msgs/UInt64',  'std_msgs/UInt32',
-      'std_msgs/Float64MultiArray',
-      'std_msgs/msg/Float64', 'std_msgs/msg/Float32',
-      'std_msgs/msg/Int32',
-    };
-    return scalars.contains(type);
+  static String _secs(Duration d) =>
+      '${(d.inMilliseconds / 1000).toStringAsFixed(1)} s';
+}
+
+class _WaitingForData extends StatelessWidget {
+  final String topic;
+  final Duration waited;
+
+  const _WaitingForData({required this.topic, required this.waited});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final slow = waited > const Duration(seconds: 3);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 20),
+            Text('Waiting for the first message on $topic',
+                textAlign: TextAlign.center),
+            if (slow) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Nothing received yet. The topic may have no active publisher, '
+                'or it publishes rarely.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

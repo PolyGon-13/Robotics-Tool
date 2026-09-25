@@ -27,7 +27,8 @@ class _OdometryWidgetState extends State<OdometryWidget> {
   @override
   void didUpdateWidget(OdometryWidget old) {
     super.didUpdateWidget(old);
-    _processMsg(widget.latestMsg);
+    // Rebuilds also happen without a new message (status refresh)
+    if (!identical(old.latestMsg, widget.latestMsg)) _processMsg(widget.latestMsg);
   }
 
   void _processMsg(Map<String, dynamic> msg) {

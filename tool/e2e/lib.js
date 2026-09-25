@@ -27,10 +27,12 @@ const wait = (page, ms) => page.waitForTimeout(ms);
 
 /** Visible semantic labels, for asserting what is on screen. */
 function labels(page) {
-  return page.$$eval('flt-semantics', es => [...new Set(es.map(e =>
-    (e.getAttribute('aria-label') ||
-      (e.childNodes.length === 1 && e.firstChild.nodeType === 3 ? e.textContent : '') || '').trim()
-  ).filter(Boolean))]);
+  return page.$$eval('flt-semantics', es => [...new Set(es.map(e => {
+    const aria = e.getAttribute('aria-label');
+    if (aria) return aria.trim();
+    // Leaf nodes: text lives directly inside (possibly wrapped in a span)
+    return e.querySelector('flt-semantics') ? '' : (e.innerText || e.textContent || '').trim();
+  }).filter(Boolean))]);
 }
 
 async function connect(page, { host = ROS_HOST } = {}) {

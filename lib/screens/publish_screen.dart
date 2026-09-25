@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/connection_provider.dart';
-import '../widgets/settings_button.dart';
 
 class PublishScreen extends StatefulWidget {
   final String topic;
@@ -24,7 +23,7 @@ class _PublishScreenState extends State<PublishScreen> {
   bool _isRepeating = false;
   int _intervalMs = 500;
   Timer? _timer;
-  bool _isSending = false;
+  int _sentCount = 0;
 
   static const List<int> _intervals = [100, 500, 1000];
 
@@ -92,36 +91,43 @@ class _PublishScreenState extends State<PublishScreen> {
 
   // ─── 발행 ─────────────────────────────────────────────────────────────────
 
-  Future<void> _sendOnce() async {
-    if (!_isValid) return;
-    setState(() => _isSending = true);
-    try {
-      final msg = jsonDecode(_controller.text) as Map<String, dynamic>;
-      context.read<ConnectionProvider>().service.publish(
-            widget.topic,
-            widget.type,
-            msg,
-          );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Published!'),
-            duration: Duration(milliseconds: 800),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Publish failed: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSending = false);
+  /// Publishes the editor content once. Returns false (and stops repeating)
+  /// if the message could not be sent.
+  bool _send({bool fromRepeat = false}) {
+    if (!_isValid) return false;
+    final decoded = jsonDecode(_controller.text);
+    if (decoded is! Map<String, dynamic>) {
+      _fail('The message must be a JSON object: { ... }');
+      return false;
     }
+    final ok = context
+        .read<ConnectionProvider>()
+        .service
+        .publish(widget.topic, widget.type, decoded);
+    if (!ok) {
+      _fail('Not connected — message was not sent');
+      return false;
+    }
+    setState(() => _sentCount++);
+    if (!fromRepeat) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text('Published to ${widget.topic}'),
+          duration: const Duration(milliseconds: 900),
+        ));
+    }
+    return true;
+  }
+
+  void _fail(String message) {
+    if (_isRepeating) _toggleRepeat(false);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ));
   }
 
   void _toggleRepeat(bool value) {
@@ -130,7 +136,7 @@ class _PublishScreenState extends State<PublishScreen> {
     if (value && _isValid) {
       _timer = Timer.periodic(
         Duration(milliseconds: _intervalMs),
-        (_) => _sendOnce(),
+        (_) => _send(fromRepeat: true),
       );
     }
     setState(() => _isRepeating = value && _isValid);
@@ -165,7 +171,6 @@ class _PublishScreenState extends State<PublishScreen> {
             ),
           ],
         ),
-        actions: const [SettingsButton()],
       ),
       body: Column(
         children: [
@@ -209,7 +214,7 @@ class _PublishScreenState extends State<PublishScreen> {
             title: const Text('Repeat Publish'),
             subtitle: Text(
               _isRepeating
-                  ? 'Publishing every $_intervalMs ms…'
+                  ? 'Publishing every $_intervalMs ms · $_sentCount sent'
                   : 'Send repeatedly on interval',
             ),
             secondary: Icon(
@@ -260,16 +265,11 @@ class _PublishScreenState extends State<PublishScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: (!_isValid || _isSending) ? null : _sendOnce,
-                  icon: _isSending
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.send),
-                  label: const Text('Publish Once'),
+                  onPressed: _isValid ? () => _send() : null,
+                  icon: const Icon(Icons.send),
+                  label: Text(_sentCount == 0
+                      ? 'Publish Once'
+                      : 'Publish Once  ($_sentCount sent)'),
                 ),
               ),
             ),

@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../../utils/ros_msg.dart';
+
 class LaserScanWidget extends StatelessWidget {
   final Map<String, dynamic> msg;
 
@@ -10,12 +12,12 @@ class LaserScanWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ranges = (msg['ranges'] as List<dynamic>? ?? [])
-        .map((e) => (e as num).toDouble())
-        .toList();
-    final rangeMax = (msg['range_max'] as num?)?.toDouble() ?? 10.0;
-    final angleMin = (msg['angle_min'] as num?)?.toDouble() ?? -pi;
-    final angleMax = (msg['angle_max'] as num?)?.toDouble() ?? pi;
+    // rosbridge sends inf/NaN ranges as null
+    final ranges =
+        doubleList(msg['ranges']).map((e) => e ?? double.infinity).toList();
+    final rangeMax = numAt(msg, 'range_max', 10.0);
+    final angleMin = numAt(msg, 'angle_min', -pi);
+    final angleMax = numAt(msg, 'angle_max', pi);
 
     if (ranges.isEmpty) {
       return const Center(child: Text('No laser data'));
