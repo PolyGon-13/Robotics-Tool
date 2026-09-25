@@ -100,8 +100,11 @@ class _GraphScreenState extends State<GraphScreen> {
 
   // ── Load ─────────────────────────────────────────────────────────────────
 
+  int _loadToken = 0;
+
   Future<void> _loadGraph() async {
     if (!mounted) return;
+    final token = ++_loadToken; // a newer load (e.g. after reconnect) wins
     final service = context.read<ConnectionProvider>().service;
     setState(() {
       _loading = true;
@@ -170,7 +173,7 @@ class _GraphScreenState extends State<GraphScreen> {
         ));
       }
 
-      if (!mounted) return;
+      if (!mounted || token != _loadToken) return;
       setState(() {
         _rosNodes = rosNodes;
         _rosTopics = rosTopics;
@@ -179,7 +182,7 @@ class _GraphScreenState extends State<GraphScreen> {
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || token != _loadToken) return;
       setState(() {
         _error = e.toString();
         _loading = false;

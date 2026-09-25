@@ -42,6 +42,7 @@ class _PublishScreenState extends State<PublishScreen> {
   void initState() {
     super.initState();
     _service = context.read<ConnectionProvider>().service;
+    _service.advertise(widget.topic, widget.type);
     _template = _fallbackTemplate(widget.type);
     _controller = TextEditingController(text: _template);
     _controller.addListener(_validate);
@@ -51,6 +52,10 @@ class _PublishScreenState extends State<PublishScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    // Let the joystick's final stop messages go out before unadvertising
+    final service = _service;
+    final topic = widget.topic;
+    Timer(const Duration(seconds: 1), () => service.unadvertise(topic));
     _controller.dispose();
     super.dispose();
   }
@@ -110,11 +115,14 @@ class _PublishScreenState extends State<PublishScreen> {
       final v = jsonDecode(_controller.text);
       final err = v is Map ? null : 'The message must be a JSON object: { ... }';
       if (_isValid == (err == null) && _errorText == err) return;
+      if (err != null && _isRepeating) _toggleRepeat(false);
       setState(() {
         _isValid = err == null;
         _errorText = err;
       });
     } on FormatException catch (e) {
+      // Stop repeating: the editor no longer holds a sendable message
+      if (_isRepeating) _toggleRepeat(false);
       setState(() {
         _isValid = false;
         _errorText = e.message;

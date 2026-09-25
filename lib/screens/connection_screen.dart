@@ -74,7 +74,11 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
         if (conn.isConnected && !_hasNavigated) {
           _hasNavigated = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) Navigator.pushReplacementNamed(context, '/main');
+            // Replace everything above Home (also a Settings page opened
+            // while connecting), so Back from Main never lands here again
+            if (mounted) {
+              Navigator.of(context).pushNamedAndRemoveUntil('/main', ModalRoute.withName('/'));
+            }
           });
         }
         if (!conn.isConnected) _hasNavigated = false;

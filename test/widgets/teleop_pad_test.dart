@@ -83,4 +83,21 @@ void main() {
     expect(sent, isNotEmpty);
     expect(sent.every((c) => c == (0.0, 0.0)), isTrue);
   });
+
+  test('sendStopReliably keeps retrying while sending fails', () async {
+    var failuresLeft = 4;
+    var delivered = 0;
+    bool flaky(double l, double a) {
+      if (failuresLeft > 0) {
+        failuresLeft--;
+        return false;
+      }
+      delivered++;
+      return true;
+    }
+    final t = sendStopReliably(flaky);
+    await Future.delayed(const Duration(milliseconds: 1200));
+    expect(delivered, 3, reason: 'three stops once the link is back');
+    expect(t.isActive, isFalse);
+  });
 }

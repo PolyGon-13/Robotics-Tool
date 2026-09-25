@@ -84,23 +84,53 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  /// Back from the main screen ends the session (after asking), instead of
+  /// leaving the connection running behind the home screen.
+  Future<void> _confirmDisconnect() async {
+    final conn = context.read<ConnectionProvider>();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Disconnect?'),
+        content: Text('Close the connection to ${conn.ip}:${conn.port}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Stay')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Disconnect')),
+        ],
+      ),
+    );
+    // The connection listener navigates home once disconnected
+    if (ok == true) await conn.disconnect();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const _ReconnectBanner(),
-          NavigationBar(
-            selectedIndex: _currentIndex,
-            onDestinationSelected: (i) => setState(() => _currentIndex = i),
-            destinations: _tabs,
-          ),
-        ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_currentIndex != 0) {
+          setState(() => _currentIndex = 0); // Back from Graph → Topics first
+        } else {
+          _confirmDisconnect();
+        }
+      },
+      child: Scaffold(
+        body: IndexedStack(
+          index: _currentIndex,
+          children: _screens,
+        ),
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const _ReconnectBanner(),
+            NavigationBar(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: (i) => setState(() => _currentIndex = i),
+              destinations: _tabs,
+            ),
+          ],
+        ),
       ),
     );
   }

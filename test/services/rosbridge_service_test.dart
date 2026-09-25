@@ -10,6 +10,10 @@ class FakeRosbridge {
   late final HttpServer _server;
   final List<WebSocket> clients = [];
   final List<Map<String, dynamic>> received = [];
+  /// Stop answering (like a Wi-Fi link that died without closing TCP).
+  bool silent = false;
+  /// Service name → error text returned with result:false.
+  final Map<String, String> failing = {};
   final _connections = StreamController<WebSocket>.broadcast();
 
   int get port => _server.port;
@@ -23,7 +27,13 @@ class FakeRosbridge {
       ws.listen((raw) {
         final m = jsonDecode(raw as String) as Map<String, dynamic>;
         received.add(m);
-        if (m['op'] == 'call_service') {
+        if (silent) return;
+        if (m['op'] == 'call_service' && failing.containsKey(m['service'])) {
+          ws.add(jsonEncode({
+            'op': 'service_response', 'id': m['id'], 'service': m['service'],
+            'values': failing[m['service']], 'result': false,
+          }));
+        } else if (m['op'] == 'call_service') {
           ws.add(jsonEncode({
             'op': 'service_response',
             'id': m['id'],
@@ -143,5 +153,63 @@ void main() {
     await service.connect('127.0.0.1', port);
     await until(() => service.status == ConnectionStatus.failed,
         timeout: const Duration(seconds: 15));
+  });
+
+  test('two subscribers share a topic; the stream ends only after both leave', () async {
+    await service.connect('127.0.0.1', server.port);
+    final a = <Map<String, dynamic>>[], b = <Map<String, dynamic>>[];
+    service.subscribe('/t', 'std_msgs/msg/Int32').listen(a.add);
+    service.subscribe('/t', 'std_msgs/msg/Int32').listen(b.add);
+    await until(() => server.ops('subscribe').isNotEmpty);
+    expect(server.ops('subscribe').length, 1);
+
+    service.unsubscribe('/t');
+    await Future.delayed(const Duration(milliseconds: 100));
+    expect(server.ops('unsubscribe'), isEmpty);
+    server.publish('/t', {'data': 1});
+    await until(() => b.isNotEmpty);
+
+    service.unsubscribe('/t');
+    await until(() => server.ops('unsubscribe').isNotEmpty);
+  });
+
+  test('publish advertises first; advertise is restored after a reconnect', () async {
+    await service.connect('127.0.0.1', server.port);
+    service.advertise('/cmd_vel', 'geometry_msgs/msg/Twist');
+    await until(() => server.ops('advertise').isNotEmpty);
+    expect(service.publish('/other', 'std_msgs/msg/Bool', {'data': true}), isTrue);
+    await until(() => server.ops('publish').isNotEmpty);
+    final ops = server.received.map((m) => '${m['op']} ${m['topic']}').toList();
+    expect(ops.indexOf('advertise /other'), lessThan(ops.indexOf('publish /other')));
+
+    final reconnected = server.connections.first;
+    await server.dropAll();
+    await reconnected.timeout(const Duration(seconds: 8));
+    await until(() => server.ops('advertise').where((m) => m['topic'] == '/cmd_vel').length == 2);
+
+    service.unadvertise('/cmd_vel');
+    await until(() => server.ops('unadvertise').isNotEmpty);
+  });
+
+  test('a failed service call reports the rosbridge error instead of timing out', () async {
+    server.failing['/rosapi/message_details'] = 'Unknown message type my_pkg/Foo';
+    await service.connect('127.0.0.1', server.port);
+    final sw = Stopwatch()..start();
+    await expectLater(service.getMessageTemplate('my_pkg/msg/Foo'),
+        throwsA(predicate((e) => '$e'.contains('Unknown message type'))));
+    expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
+  });
+
+  test('a link that stops answering is detected and reconnected', () async {
+    await service.connect('127.0.0.1', server.port);
+    final statuses = <ConnectionStatus>[];
+    service.onStatusChange = statuses.add;
+    server.silent = true;
+    // idle 3 s + probe timeout 2 s (+ watchdog tick)
+    await until(() => statuses.contains(ConnectionStatus.connecting),
+        timeout: const Duration(seconds: 9));
+    server.silent = false;
+    await until(() => service.status == ConnectionStatus.connected,
+        timeout: const Duration(seconds: 8));
   });
 }

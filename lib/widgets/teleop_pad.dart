@@ -6,6 +6,19 @@ import 'package:flutter/material.dart';
 /// Sends a velocity command; returns false if it could not be sent.
 typedef CommandSender = bool Function(double linear, double angular);
 
+/// Sends zero velocity now, twice more shortly after, and keeps retrying
+/// (up to 10 s) while sending fails, e.g. during an automatic reconnect, so
+/// a release is never lost. Independent of any widget: it outlives screens.
+Timer sendStopReliably(CommandSender send) {
+  var sent = send(0, 0) ? 1 : 0;
+  var tries = 0;
+  return Timer.periodic(const Duration(milliseconds: 120), (t) {
+    tries++;
+    if (send(0, 0)) sent++;
+    if (sent >= 3 || tries >= 80) t.cancel();
+  });
+}
+
 /// Virtual joystick for driving a robot with Twist messages.
 ///
 /// Commands are sent at [rateHz] only while a finger is on the stick.
@@ -57,12 +70,8 @@ class _TeleopPadState extends State<TeleopPad> {
     _timer = null;
     _active = false;
     if (mounted) setState(() => _knob = Offset.zero);
-    final send = widget.send;
-    send(0, 0);
-    // Repeat the stop in case a message is dropped
-    for (final ms in [100, 250]) {
-      _stopTimers.add(Timer(Duration(milliseconds: ms), () => send(0, 0)));
-    }
+    _stopTimers.removeWhere((t) => !t.isActive);
+    _stopTimers.add(sendStopReliably(widget.send));
   }
 
   void _move(Offset local, double radius) {
@@ -81,12 +90,7 @@ class _TeleopPadState extends State<TeleopPad> {
     _timer?.cancel();
     // Pending repeated stops are left to fire: [send] must not depend on
     // this widget's context.
-    if (_active) {
-      final send = widget.send;
-      send(0, 0);
-      Timer(const Duration(milliseconds: 100), () => send(0, 0));
-      Timer(const Duration(milliseconds: 250), () => send(0, 0));
-    }
+    if (_active) sendStopReliably(widget.send);
     super.dispose();
   }
 
