@@ -35,14 +35,9 @@ class _OdometryWidgetState extends State<OdometryWidget> {
     final pose = (msg['pose'] as Map?)?.cast<String, dynamic>() ?? {};
     final poseInner = (pose['pose'] as Map?)?.cast<String, dynamic>() ?? {};
     final pos = (poseInner['position'] as Map?)?.cast<String, dynamic>() ?? {};
-    final ori = (poseInner['orientation'] as Map?)?.cast<String, dynamic>() ?? {};
 
     final x = (pos['x'] as num?)?.toDouble() ?? 0;
     final y = (pos['y'] as num?)?.toDouble() ?? 0;
-    final qx = (ori['x'] as num?)?.toDouble() ?? 0;
-    final qy = (ori['y'] as num?)?.toDouble() ?? 0;
-    final qz = (ori['z'] as num?)?.toDouble() ?? 0;
-    final qw = (ori['w'] as num?)?.toDouble() ?? 1;
 
     final twist = (msg['twist'] as Map?)?.cast<String, dynamic>() ?? {};
     final twistInner = (twist['twist'] as Map?)?.cast<String, dynamic>() ?? {};
